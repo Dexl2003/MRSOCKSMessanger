@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.SplitPane?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+
+<SplitPane fx:id="splitPane" dividerPositions="0.3" xmlns="http://javafx.com/javafx/22" xmlns:fx="http://javafx.com/fxml/1" fx:controller="org.example.messengermrsocks.controller.MainController">
+   <items>
+      <ListView fx:id="ListViewDialog" prefHeight="400.0" prefWidth="209.0" />
+      <VBox prefHeight="400.0" prefWidth="444.0">
+         <children>
+            <ListView id="listViewHistoryChat" fx:id="listViewHistoryChat" prefHeight="317.0" prefWidth="185.0" VBox.vgrow="ALWAYS" />
+            <HBox prefHeight="84.0" prefWidth="444.0">
+               <children>
+                  <TextArea id="TextFieldSend" fx:id="sendTextField" prefHeight="83.0" prefWidth="350.0" HBox.hgrow="ALWAYS" />
+               </children>
+            </HBox>
+         </children>
+      </VBox>
+   </items>
+</SplitPane>
