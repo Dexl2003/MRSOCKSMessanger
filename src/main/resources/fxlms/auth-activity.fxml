@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.geometry.Rectangle2D?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Hyperlink?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.PasswordField?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.text.Font?>
+<?import javafx.scene.text.Text?>
+
+<HBox id="main_hbox" alignment="CENTER_LEFT" style="-fx-background-color: #d9d9d9;" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="org.example.messengermrsocks.controller.AuthController">
+   <children>
+      <VBox id="image_vbox" alignment="CENTER" disable="true" maxWidth="-Infinity" style="-fx-background-color: gray;" HBox.hgrow="ALWAYS">
+         <children>
+            <ImageView fitWidth="200.0" pickOnBounds="true" preserveRatio="true" VBox.vgrow="ALWAYS">
+               <VBox.margin>
+                  <Insets bottom="20.0" left="20.0" right="20.0" top="100.0" />
+               </VBox.margin>
+               <image>
+                  <Image url="@../images/MRSOKS-03.png" />
+               </image>
+               <viewport>
+                  <Rectangle2D />
+               </viewport>
+            </ImageView>
+            <HBox prefHeight="27.0" prefWidth="111.0" spacing="20.0">
+               <children>
+                  <Text strokeType="OUTSIDE" strokeWidth="0.0" text="ГОСТ 34.11-2012">
+                     <font>
+                        <Font size="18.0" />
+                     </font>
+                  </Text>
+               </children>
+               <VBox.margin>
+                  <Insets top="100.0" />
+               </VBox.margin>
+               <padding>
+                  <Insets bottom="10.0" left="20.0" right="10.0" top="10.0" />
+               </padding>
+            </HBox>
+         </children>
+         <HBox.margin>
+            <Insets />
+         </HBox.margin>
+      </VBox>
+      <VBox alignment="CENTER" HBox.hgrow="ALWAYS">
+         <children>
+            <VBox id="login_vbox" alignment="CENTER" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" spacing="20" style="-fx-background-color: white;">
+                <padding>
+                    <Insets bottom="30.0" left="30.0" right="30.0" top="40.0" />
+                </padding>
+            
+                      <!-- Поле Email -->
+                <VBox alignment="CENTER_LEFT" spacing="5">
+                    <Label style="-fx-font-weight: bold; -fx-text-fill: #555;" text="Email" />
+                    <TextField fx:id="emailField" promptText="Email adress" style="-fx-background-color: white; -fx-border-color: #ddd; -fx-pref-height: 40; -fx-pref-width: 300;" />
+                </VBox>
+            
+                      <!-- Поле Password -->
+                <VBox alignment="CENTER_LEFT" spacing="5">
+                    <Label style="-fx-font-weight: bold; -fx-text-fill: #555;" text="Password" />
+                    <PasswordField fx:id="passwordField" promptText="Password" style="-fx-background-color: white; -fx-border-color: #ddd; -fx-pref-height: 40; -fx-pref-width: 300;" />
+                </VBox>
+            
+                      <!-- Кнопка входа -->
+                <Button fx:id="signInButton" style="-fx-background-color: #4285f4; -fx-text-fill: white; -fx-font-weight: bold; -fx-pref-height: 40; -fx-pref-width: 300;" text="Sign In" />
+            
+                      <!-- Ссылка восстановления пароля -->
+                <Hyperlink fx:id="forgotPasswordLink" style="-fx-text-fill: #4285f4; -fx-border-width: 0; -fx-padding: 10 0 0 0;" text="Forgot password?">
+                  <VBox.margin>
+                     <Insets />
+                  </VBox.margin>
+               </Hyperlink>
+               <opaqueInsets>
+                  <Insets />
+               </opaqueInsets>
+            </VBox>
+         </children>
+         <padding>
+            <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+         </padding>
+      </VBox>
+   </children>
+   <opaqueInsets>
+      <Insets />
+   </opaqueInsets>
+</HBox>
