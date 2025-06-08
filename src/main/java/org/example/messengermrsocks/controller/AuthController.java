@@ -25,7 +25,7 @@ public class AuthController {
 
         // Реализация логики авторизации
         System.out.println("Попытка входа: " + email);
-
+        
     }
 
     private void handleForgotPassword() {
