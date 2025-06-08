@@ -25,9 +25,6 @@
                <image>
                   <Image url="@../images/MRSOKS-03.png" />
                </image>
-               <viewport>
-                  <Rectangle2D />
-               </viewport>
             </ImageView>
             <HBox prefHeight="27.0" prefWidth="111.0" spacing="20.0">
                <children>

@@ -15,8 +15,8 @@ public class AuthController {
     @FXML private Hyperlink forgotPasswordLink;
     @FXML private Button signInButton;
 
-    private static final String VALID_EMAIL = "user@example.com";
-    private static final String VALID_PASSWORD = "password123";
+    private static final String VALID_EMAIL = "1";
+    private static final String VALID_PASSWORD = "1";
 
     @FXML
     private void initialize() {
@@ -53,10 +53,12 @@ public class AuthController {
 
     private void openMainActivity() {
         try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxlms/main-activity.fxml"));
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/main-activity.fxml"));
             Parent root = loader.load();
             Stage stage = new Stage();
             stage.setTitle("Главное окно");
+            stage.setMinWidth(700);
+            stage.setMinHeight(500);
             stage.setScene(new Scene(root));
             stage.show();
         } catch (IOException e) {
