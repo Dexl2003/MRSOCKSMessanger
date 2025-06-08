@@ -2,6 +2,11 @@ package org.example.messengermrsocks.controller;
 
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.stage.Stage;
+import java.io.IOException;
 
 public class AuthController {
     @FXML private TextField emailField;
@@ -9,6 +14,9 @@ public class AuthController {
 
     @FXML private Hyperlink forgotPasswordLink;
     @FXML private Button signInButton;
+
+    private static final String VALID_EMAIL = "user@example.com";
+    private static final String VALID_PASSWORD = "password123";
 
     @FXML
     private void initialize() {
@@ -23,13 +31,36 @@ public class AuthController {
         String email = emailField.getText();
         String password = passwordField.getText();
 
-        // Реализация логики авторизации
-        System.out.println("Попытка входа: " + email);
-        
+        if (VALID_EMAIL.equals(email) && VALID_PASSWORD.equals(password)) {
+            // Открыть главное окно
+            openMainActivity();
+            // Закрыть окно авторизации
+            signInButton.getScene().getWindow().hide();
+        } else {
+            // Показать ошибку
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Ошибка авторизации");
+            alert.setHeaderText(null);
+            alert.setContentText("Неверный email или пароль!");
+            alert.showAndWait();
+        }
     }
 
     private void handleForgotPassword() {
         // Реализация восстановления пароля
         System.out.println("Восстановление пароля");
+    }
+
+    private void openMainActivity() {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxlms/main-activity.fxml"));
+            Parent root = loader.load();
+            Stage stage = new Stage();
+            stage.setTitle("Главное окно");
+            stage.setScene(new Scene(root));
+            stage.show();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
