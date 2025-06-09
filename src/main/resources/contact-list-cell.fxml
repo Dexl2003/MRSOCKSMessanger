@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.image.ImageView?>
+
+<HBox xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="org.example.messengermrsocks.controller.ContactListCellController" spacing="10" alignment="CENTER_LEFT" style="-fx-background-color: #666; -fx-padding: 8; -fx-min-height: 52;">
+    <ImageView fx:id="avatarImageView" fitWidth="36" fitHeight="36" style="-fx-background-color: #bbb; -fx-background-radius: 18; -fx-border-radius: 18;"/>
+    <VBox alignment="CENTER_LEFT" spacing="2" HBox.hgrow="ALWAYS">
+        <Label fx:id="nameLabel" text="Name User" style="-fx-text-fill: white; -fx-font-size: 16;"/>
+        <Label fx:id="statusLabel" text="Отключен" style="-fx-text-fill: red; -fx-font-size: 12;" visible="false" managed="false"/>
+    </VBox>
+    <Label fx:id="timeLabel" text="19:40" style="-fx-text-fill: white; -fx-font-size: 14;"/>
+</HBox> 

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.TextArea?>
+
+<BorderPane xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="org.example.messengermrsocks.controller.MainController" stylesheets="@styles.css">
+    <left>
+        <VBox minWidth="220" maxWidth="300" spacing="0" style="-fx-background-color: #333;">
+            <TextField fx:id="searchField" prefHeight="25.0" style="-fx-background-radius: 8; -fx-background-color: #eee;">
+                <VBox.margin>
+                    <Insets bottom="5.0" left="5.0" right="5.0" top="5.0" />
+                </VBox.margin>
+            </TextField>
+            <ListView fx:id="ListViewDialog" style="-fx-background-color: transparent;" VBox.vgrow="ALWAYS" />
+        </VBox>
+    </left>
+    
+    <center>
+        <VBox spacing="0" style="-fx-background-color: #e0e0e0;">
+            <HBox alignment="CENTER_LEFT" spacing="10" style="-fx-background-color: #666; -fx-padding: 8;">
+                <ImageView fitHeight="36" fitWidth="36" style="-fx-background-color: #bbb; -fx-background-radius: 18; -fx-border-radius: 18;">
+                    <image>
+                        <Image url="@images/image.png" />
+                    </image>
+                </ImageView>
+                <Label fx:id="chatNameLabel" style="-fx-text-fill: white; -fx-font-size: 18;" text="Name User" />
+                <Pane HBox.hgrow="ALWAYS" />
+                <Label fx:id="chatTimeLabel" style="-fx-text-fill: white; -fx-font-size: 14;" text="19:40" />
+                <Button fx:id="repeatButton" styleClass="button-repeat" prefWidth="40" prefHeight="40" />
+                <Button fx:id="disconnectButton" styleClass="button-disconnect" prefWidth="40" prefHeight="40" />
+            </HBox>
+            <ListView fx:id="listViewHistoryChat" style="-fx-background-color: transparent; -fx-padding: 16;" VBox.vgrow="ALWAYS" />
+            <HBox alignment="CENTER_LEFT" spacing="8" style="-fx-background-color: white; -fx-padding: 8;">
+                <Button fx:id="attachButton" styleClass="button-attach" prefWidth="40" prefHeight="40" />
+                <TextArea fx:id="sendTextField" promptText="Длинный текст сообщения" style="-fx-font-size: 16;" HBox.hgrow="ALWAYS" prefRowCount="1" maxHeight="80" wrapText="true"/>
+                <Button fx:id="sendButton" styleClass="button-send" prefWidth="40" prefHeight="40" />
+            </HBox>
+        </VBox>
+    </center>
+</BorderPane>

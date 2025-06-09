@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.geometry.Insets?>
+
+<HBox fx:id="rootHBox" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="org.example.messengermrsocks.controller.MessageListCellController" spacing="8" alignment="TOP_LEFT">
+    <ImageView fx:id="avatarImageView" fitWidth="32" fitHeight="32" />
+    <VBox spacing="2">
+        <VBox fx:id="bubbleVBox" spacing="4" style="-fx-background-color: #fff; -fx-background-radius: 8; -fx-padding: 4;">
+            <Label fx:id="messageTextLabel" style="-fx-text-fill: #222; -fx-font-size: 20; -fx-background-color: transparent;" wrapText="true"/>
+            <ImageView fx:id="mediaPreviewImageView" fitWidth="120" preserveRatio="true" visible="false" managed="false" style="-fx-background-radius: 8; -fx-effect: dropshadow(gaussian, #888, 4, 0.2, 0, 2);"/>
+            <HBox fx:id="timeStatusHBox" spacing="4" alignment="CENTER_RIGHT">
+                <Label fx:id="timeLabel" style="-fx-text-fill: #888; -fx-font-size: 12;"/>
+                <HBox spacing="-4" alignment="CENTER_LEFT">
+                    <Label fx:id="sentCheckmark" text="✓" style="-fx-text-fill: #90EE90; -fx-font-size: 12;" visible="false"/>
+                    <Label fx:id="receivedCheckmark" text="✓" style="-fx-text-fill: #90EE90; -fx-font-size: 12;" visible="false"/>
+                </HBox>
+            </HBox>
+        </VBox>
+    </VBox>
+    <Pane HBox.hgrow="ALWAYS"/>
+</HBox> 
