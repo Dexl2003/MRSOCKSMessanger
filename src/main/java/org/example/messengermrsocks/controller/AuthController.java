@@ -6,6 +6,8 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import java.io.IOException;
 
 public class AuthController {
@@ -25,6 +27,19 @@ public class AuthController {
 
         // Обработчик ссылки "Forgot password?"
         forgotPasswordLink.setOnAction(event -> handleForgotPassword());
+
+        // Обработчик нажатия Enter в полях ввода
+        emailField.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ENTER) {
+                passwordField.requestFocus();
+            }
+        });
+
+        passwordField.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ENTER) {
+                handleSignIn();
+            }
+        });
     }
 
     private void handleSignIn() {
