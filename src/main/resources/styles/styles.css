@@ -1,6 +1,6 @@
 .button-repeat {
     -fx-background-color: transparent;
-    -fx-background-image: url("images/repeat.png");
+    -fx-background-image: url("/repeat.png");
     -fx-background-size: 22px 22px;
     -fx-background-repeat: no-repeat;
     -fx-background-position: center;
@@ -9,7 +9,7 @@
 
 .button-disconnect {
     -fx-background-color: transparent;
-    -fx-background-image: url("images/disconnect.png");
+    -fx-background-image: url("/disconnect.png");
     -fx-background-size: 28px 28px;
     -fx-background-repeat: no-repeat;
     -fx-background-position: center;
@@ -18,7 +18,7 @@
 
 .button-send {
     -fx-background-color: transparent;
-    -fx-background-image: url("images/send.png");
+    -fx-background-image: url("/send.png");
     -fx-background-size: 32px 32px;
     -fx-background-repeat: no-repeat;
     -fx-background-position: center;
@@ -27,7 +27,7 @@
 
 .button-attach {
     -fx-background-color: transparent;
-    -fx-background-image: url("images/attach.png");
+    -fx-background-image: url("/attach.png");
     -fx-background-size: 28px 28px;
     -fx-background-repeat: no-repeat;
     -fx-background-position: center;

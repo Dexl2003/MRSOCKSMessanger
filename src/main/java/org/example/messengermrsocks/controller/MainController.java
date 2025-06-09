@@ -45,6 +45,7 @@ import org.example.messengermrsocks.storage.SecureLocalStorageService;
 import java.util.List;
 import java.util.ArrayList;
 import org.example.messengermrsocks.model.Messages.MessengerData;
+import org.example.messengermrsocks.Networks.AuthManager;
 
 public class MainController {
     @FXML private ListView<Contact> ListViewDialog;
@@ -66,6 +67,8 @@ public class MainController {
     private ObservableList<Contact> filteredContacts;
     public static ListView listViewHistoryChatStatic;
     private MessengerData localData;
+    private AuthManager authManager;
+    private Map<Contact, String> draftMessages = new HashMap<>();
 
     public void initialize() {
         // --- Загрузка данных из локального хранилища ---
@@ -73,17 +76,6 @@ public class MainController {
             MessengerData loaded = SecureLocalStorageService.loadData(MessengerData.class);
             if (loaded != null) {
                 localData = loaded;
-            } else {
-                int i = 1;
-                for (Contact contact : localData.getContacts()) {
-                    List<Message> messages = new ArrayList<>();
-                    messages.add(new Message("Привет, это тестовое сообщение #" + i, "10:" + (10 + i), "/images/image.png", false));
-                    messages.add(new Message("Ответ на тестовое сообщение #" + i, "10:" + (12 + i), "/images/image.png", true));
-                    messages.add(new Message("Еще одно сообщение для " + contact.getName(), "10:" + (14 + i), "/images/image.png", false));
-                    localData.getDialogs().put(contact.getName(), messages);
-                    i++;
-                }
-                SecureLocalStorageService.saveData(localData);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -214,8 +206,15 @@ public class MainController {
 
         // --- Обработка выбора контакта ---
         ListViewDialog.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (oldVal != null) {
+                // Сохраняем черновик для предыдущего контакта
+                draftMessages.put(oldVal, sendTextField.getText());
+            }
             if (newVal != null) {
                 searchField.clear();
+                // Восстанавливаем черновик для нового контакта
+                String draft = draftMessages.getOrDefault(newVal, "");
+                sendTextField.setText(draft);
                 // Сброс выделения, чтобы избежать IndexOutOfBoundsException
                 Platform.runLater(() -> ListViewDialog.getSelectionModel().clearSelection());
                 currentContact = newVal;
@@ -449,10 +448,11 @@ public class MainController {
                 // Перенос строки
                 sendTextField.appendText("\n");
             } else {
-                // Отправка сообщения
-                sendMessage();
-                event.consume();
+                // Отправка сообщения только если оно не пустое
+                String text = sendTextField.getText().trim();
+                if (!text.isEmpty()) sendMessage();
             }
+            event.consume();
         }
     }
 
@@ -477,6 +477,21 @@ public class MainController {
             SecureLocalStorageService.saveData(localData);
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    public void setAuthManager(AuthManager authManager) {
+        this.authManager = authManager;
+        // Инициализация сетевых компонентов после аутентификации
+        initializeNetworkComponents();
+    }
+
+    private void initializeNetworkComponents() {
+        // Инициализация P2P соединения и других сетевых компонентов
+        if (authManager != null && authManager.isAuthenticated()) {
+            // TODO: Инициализация сетевых компонентов
+            System.out.println("Initializing network components for user: " + 
+                             authManager.getCurrentUser().getName());
         }
     }
 }

@@ -13,7 +13,7 @@
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.TextArea?>
 
-<BorderPane xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="org.example.messengermrsocks.controller.MainController" stylesheets="@styles.css">
+<BorderPane xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="org.example.messengermrsocks.controller.MainController" stylesheets="@styles/styles.css">
     <left>
         <VBox minWidth="220" maxWidth="300" spacing="0" style="-fx-background-color: #333;">
             <TextField fx:id="searchField" prefHeight="25.0" style="-fx-background-radius: 8; -fx-background-color: #eee;">

@@ -7,6 +7,7 @@ public class Contact extends People {
     private List<Integer> firstListPort;
     private String time;
     private String avatarUrl;
+    private String openKey;
 
     public Contact() { super(); }
 
@@ -27,4 +28,7 @@ public class Contact extends People {
     public void setTime(String time) { this.time = time; }
     public String getAvatarUrl() { return avatarUrl; }
     public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+
+    public String getOpenKey() { return openKey; }
+    public void setOpenKey(String openKey) { this.openKey = openKey; }
 }
