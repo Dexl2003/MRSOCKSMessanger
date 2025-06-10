@@ -62,7 +62,7 @@ public class AuthController {
         boolean isValid = !emailField.getText().trim().isEmpty() && 
                          !passwordField.getText().trim().isEmpty();
         signInButton.setDisable(!isValid);
-        registerButton.setDisable(!isValid);
+
     }
 
     @FXML
@@ -76,7 +76,7 @@ public class AuthController {
         }
 
         signInButton.setDisable(true);
-        registerButton.setDisable(true);
+
 
         // Запускаем аутентификацию в отдельном потоке
         new Thread(() -> {

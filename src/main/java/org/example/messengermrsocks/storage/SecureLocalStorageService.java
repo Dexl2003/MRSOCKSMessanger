@@ -1,6 +1,7 @@
 package org.example.messengermrsocks.storage;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import org.example.messengermrsocks.model.Messages.MessengerData;
 import org.example.messengermrsocks.model.Peoples.User;
 import java.io.File;
@@ -10,7 +11,8 @@ import java.nio.file.Paths;
 
 public class SecureLocalStorageService {
     private static final String STORAGE_DIR = "user_data";
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ObjectMapper objectMapper = new ObjectMapper()
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     static {
         // Создаем директорию для хранения данных, если она не существует
@@ -38,9 +40,16 @@ public class SecureLocalStorageService {
             File file = new File(STORAGE_DIR, fileName);
             
             if (file.exists()) {
-                MessengerData data = objectMapper.readValue(file, MessengerData.class);
-                data.setCurrentUser(currentUser);
-                return type.cast(data);
+                try {
+                    MessengerData data = objectMapper.readValue(file, MessengerData.class);
+                    data.setCurrentUser(currentUser);
+                    return type.cast(data);
+                } catch (Exception e) {
+                    System.err.println("Error loading data: " + e.getMessage());
+                    // Если произошла ошибка при загрузке, создаем новые данные
+                    MessengerData newData = new MessengerData(currentUser);
+                    return type.cast(newData);
+                }
             } else {
                 MessengerData newData = new MessengerData(currentUser);
                 return type.cast(newData);

@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.ArrayList;
 import org.example.messengermrsocks.model.Messages.MessengerData;
 import org.example.messengermrsocks.Networks.AuthManager;
+import javafx.stage.Stage;
 
 public class MainController {
     @FXML private ListView<Contact> ListViewDialog;
@@ -57,6 +58,7 @@ public class MainController {
     @FXML private Button sendButton;
     @FXML private Button disconnectButton;
     @FXML private Button attachButton;
+    @FXML private ListView<User> userSearchResults;
 
     private Map<Contact, HistoryMessages> messageHistories;
     private HistoryMessages currentHistory;
@@ -122,9 +124,22 @@ public class MainController {
         // --- Обработка поиска ---
         searchField.textProperty().addListener((obs, oldVal, newVal) -> {
             String filter = newVal == null ? "" : newVal.trim().toLowerCase();
-            filteredContacts.setAll(
-                allContacts.filtered(contact -> contact.getName().toLowerCase().contains(filter))
-            );
+            ObservableList<Contact> filtered = allContacts.filtered(contact -> contact.getName().toLowerCase().contains(filter));
+            filteredContacts.setAll(filtered);
+
+            // Если среди локальных контактов ничего не найдено и строка поиска не пуста — ищем на сервере
+            if (filtered.isEmpty() && !filter.isEmpty()) {
+                new Thread(() -> {
+                    List<User> foundUsers = authManager.searchUsers(filter);
+                    Platform.runLater(() -> {
+                        userSearchResults.setItems(FXCollections.observableArrayList(foundUsers));
+                        userSearchResults.setVisible(true);
+                    });
+                }).start();
+            } else {
+                userSearchResults.setItems(FXCollections.observableArrayList());
+                userSearchResults.setVisible(false);
+            }
         });
 
         // --- Обработчик кнопки disconnect ---
@@ -338,6 +353,26 @@ public class MainController {
         listViewHistoryChat.widthProperty().addListener((obs, oldVal, newVal) -> {
             listViewHistoryChat.refresh();
         });
+
+        // Добавляем обработчик закрытия окна для вызова logout
+        Platform.runLater(() -> {
+            Stage stage = (Stage) ListViewDialog.getScene().getWindow();
+            stage.setOnCloseRequest(event -> {
+                if (authManager != null) {
+                    authManager.logoutFromApi();
+                }
+            });
+        });
+
+        // Обработчик выбора пользователя из результатов поиска
+        userSearchResults.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                createChatWithUser(newVal);
+                searchField.clear();
+                userSearchResults.setItems(FXCollections.observableArrayList());
+                userSearchResults.setVisible(false);
+            }
+        });
     }
 
     private void handleDisconnect() {
@@ -468,6 +503,46 @@ public class MainController {
             }
             event.consume();
         }
+    }
+
+    private void searchUsers(String query) {
+        new Thread(() -> {
+            List<User> users = authManager.searchUsers(query);
+            Platform.runLater(() -> {
+                userSearchResults.setItems(FXCollections.observableArrayList(users));
+            });
+        }).start();
+    }
+
+    private void createChatWithUser(User user) {
+        // Проверяем, нет ли уже чата с этим пользователем
+        for (Contact contact : allContacts) {
+            if (contact.getName().equals(user.getUsername())) {
+                // Если чат уже существует, просто выбираем его
+                ListViewDialog.getSelectionModel().select(contact);
+                return;
+            }
+        }
+
+        // Создаем новый контакт
+        String currentTime = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
+        Contact newContact = new Contact(user.getUsername(), currentTime, "/images/image.png");
+        boolean isOnline = "online".equalsIgnoreCase(user.getStatus());
+        newContact.setStatus(isOnline);
+        
+        // Добавляем контакт в список
+        allContacts.add(newContact);
+        filteredContacts.add(newContact);
+        
+        // Создаем историю сообщений
+        HistoryMessages history = new HistoryMessages(currentUser, newContact);
+        messageHistories.put(newContact, history);
+        
+        // Сохраняем изменения
+        saveLocalData();
+        
+        // Выбираем новый чат
+        ListViewDialog.getSelectionModel().select(newContact);
     }
 
     // После любого изменения контактов или сообщений вызываем:

@@ -2,6 +2,7 @@ package org.example.messengermrsocks.model.Messages;
 
 import org.example.messengermrsocks.model.Peoples.Contact;
 import org.example.messengermrsocks.model.Peoples.User;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
@@ -53,6 +54,7 @@ public class MessengerData {
         this.disconnectedContactsNames = disconnectedContactsNames; 
     }
 
+    @JsonIgnore
     public String getStorageFileName() {
         if (currentUser == null || currentUser.getUsername() == null) {
             throw new IllegalStateException("Current user is not set");
