@@ -47,6 +47,7 @@ import java.util.ArrayList;
 import org.example.messengermrsocks.model.Messages.MessengerData;
 import org.example.messengermrsocks.Networks.AuthManager;
 import javafx.stage.Stage;
+import org.example.messengermrsocks.Networks.P2PManager;
 
 public class MainController {
     @FXML private ListView<Contact> ListViewDialog;
@@ -70,12 +71,14 @@ public class MainController {
     public static ListView listViewHistoryChatStatic;
     private MessengerData localData;
     private AuthManager authManager;
+    private P2PManager p2pManager;
     private Map<Contact, String> draftMessages = new HashMap<>();
 
     public void setAuthManager(AuthManager authManager) {
         this.authManager = authManager;
         if (authManager != null && authManager.isAuthenticated()) {
             this.currentUser = authManager.getCurrentUser();
+            this.p2pManager = new P2PManager(currentUser);
             initialize();
         }
     }
@@ -530,6 +533,10 @@ public class MainController {
         boolean isOnline = "online".equalsIgnoreCase(user.getStatus());
         newContact.setStatus(isOnline);
         
+        // Устанавливаем IP и порт для P2P
+        newContact.setIp(user.getIp());
+        newContact.setMainPort(9000); // Используем фиксированный порт
+        
         // Добавляем контакт в список
         allContacts.add(newContact);
         filteredContacts.add(newContact);
@@ -543,6 +550,22 @@ public class MainController {
         
         // Выбираем новый чат
         ListViewDialog.getSelectionModel().select(newContact);
+
+        // Отправляем P2P инвайт
+        if (p2pManager != null && newContact.getIp() != null) {
+            new Thread(() -> {
+                boolean success = p2pManager.requestP2PChannel(newContact);
+                if (!success) {
+                    Platform.runLater(() -> {
+                        Alert alert = new Alert(AlertType.WARNING);
+                        alert.setTitle("Ошибка P2P соединения");
+                        alert.setHeaderText("Не удалось установить P2P соединение");
+                        alert.setContentText("Попытка установить P2P соединение с " + newContact.getName() + " не удалась. Возможно, пользователь оффлайн или недоступен.");
+                        alert.showAndWait();
+                    });
+                }
+            }).start();
+        }
     }
 
     // После любого изменения контактов или сообщений вызываем:

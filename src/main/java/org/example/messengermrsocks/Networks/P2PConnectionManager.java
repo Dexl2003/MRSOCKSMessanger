@@ -18,47 +18,15 @@ public class P2PConnectionManager {
     private final AtomicInteger messageCounter = new AtomicInteger(0);
 
     public P2PConnectionManager() {
-        startPortListener();
+        // No need to start port listener here as it's handled by P2PInviteManager
     }
 
-    private void startPortListener() {
-        executorService.submit(() -> {
-            try (ServerSocket serverSocket = new ServerSocket(0)) {
-                int basePort = serverSocket.getLocalPort();
-                System.out.println("Base port for P2P: " + basePort);
-                
-                while (!Thread.currentThread().isInterrupted()) {
-                    try {
-                        Socket clientSocket = serverSocket.accept();
-                        handleIncomingConnection(clientSocket);
-                    } catch (IOException e) {
-                        if (!Thread.currentThread().isInterrupted()) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        });
+    public void addContact(Contact contact) {
+        activePorts.putIfAbsent(contact, new HashSet<>());
     }
 
-    private void handleIncomingConnection(Socket socket) {
-        executorService.submit(() -> {
-            try (ObjectInputStream in = new ObjectInputStream(socket.getInputStream())) {
-                Object received = in.readObject();
-                if (received instanceof Message) {
-                    handleIncomingMessage((Message) received);
-                }
-            } catch (IOException | ClassNotFoundException e) {
-                e.printStackTrace();
-            }
-        });
-    }
-
-    private void handleIncomingMessage(Message message) {
-        // TODO: Implement message handling logic
-        System.out.println("Received message: " + message.getText());
+    public void removeContact(Contact contact) {
+        activePorts.remove(contact);
     }
 
     public boolean sendMessage(Message message, Contact contact) {
