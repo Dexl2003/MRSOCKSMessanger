@@ -8,6 +8,7 @@ public class Contact extends People {
     private String time;
     private String avatarUrl;
     private String openKey;
+    private boolean isConnected;
 
     public Contact() { super(); }
 
@@ -16,6 +17,7 @@ public class Contact extends People {
         this.setName(name);
         this.time = time;
         this.avatarUrl = avatarUrl;
+        this.isConnected = false;
     }
 
     public int getMainPort() { return mainPort; }
@@ -31,4 +33,25 @@ public class Contact extends People {
 
     public String getOpenKey() { return openKey; }
     public void setOpenKey(String openKey) { this.openKey = openKey; }
+
+    public boolean isConnected() {
+        return isConnected;
+    }
+
+    public void setConnected(boolean connected) {
+        isConnected = connected;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Contact contact = (Contact) o;
+        return getName() != null && getName().equals(contact.getName());
+    }
+
+    @Override
+    public int hashCode() {
+        return getName() != null ? getName().hashCode() : 0;
+    }
 }

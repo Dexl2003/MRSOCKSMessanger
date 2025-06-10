@@ -31,7 +31,10 @@
                         <Image url="@images/image.png" />
                     </image>
                 </ImageView>
-                <Label fx:id="chatNameLabel" style="-fx-text-fill: white; -fx-font-size: 18;" text="Name User" />
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <Label fx:id="chatNameLabel" style="-fx-text-fill: white; -fx-font-size: 18;" text="Name User" />
+                    <Label fx:id="connectionStatusLabel" style="-fx-font-size: 12;" />
+                </HBox>
                 <Pane HBox.hgrow="ALWAYS" />
                 <Label fx:id="chatTimeLabel" style="-fx-text-fill: white; -fx-font-size: 14;" text="19:40" />
                 <Button fx:id="repeatButton" prefHeight="40" prefWidth="40" styleClass="button-repeat" />

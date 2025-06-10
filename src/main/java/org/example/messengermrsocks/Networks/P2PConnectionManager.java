@@ -21,6 +21,10 @@ public class P2PConnectionManager {
         // No need to start port listener here as it's handled by P2PInviteManager
     }
 
+    public boolean isContactConnected(Contact contact) {
+        return contact != null && activePorts.containsKey(contact) && !activePorts.get(contact).isEmpty();
+    }
+
     public void addContact(Contact contact) {
         activePorts.putIfAbsent(contact, new HashSet<>());
     }

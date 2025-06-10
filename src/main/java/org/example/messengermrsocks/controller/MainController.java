@@ -48,6 +48,9 @@ import org.example.messengermrsocks.model.Messages.MessengerData;
 import org.example.messengermrsocks.Networks.AuthManager;
 import javafx.stage.Stage;
 import org.example.messengermrsocks.Networks.P2PManager;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.ButtonBar;
+import org.example.messengermrsocks.Networks.P2PInviteManager;
 
 public class MainController {
     @FXML private ListView<Contact> ListViewDialog;
@@ -55,11 +58,13 @@ public class MainController {
     @FXML private TextField searchField;
     @FXML private Label chatNameLabel;
     @FXML private Label chatTimeLabel;
+    @FXML private Label connectionStatusLabel;
     @FXML private TextArea sendTextField;
     @FXML private Button sendButton;
     @FXML private Button disconnectButton;
     @FXML private Button attachButton;
     @FXML private ListView<User> userSearchResults;
+    @FXML private Button repeatButton;
 
     private Map<Contact, HistoryMessages> messageHistories;
     private HistoryMessages currentHistory;
@@ -76,11 +81,91 @@ public class MainController {
 
     public void setAuthManager(AuthManager authManager) {
         this.authManager = authManager;
-        if (authManager != null && authManager.isAuthenticated()) {
-            this.currentUser = authManager.getCurrentUser();
-            this.p2pManager = new P2PManager(currentUser);
-            initialize();
-        }
+        this.currentUser = authManager.getCurrentUser();
+        this.p2pManager = new P2PManager(currentUser);
+        
+        // Устанавливаем слушателя повторных подключений
+        p2pManager.setReconnectListener((fromUsername, fromIp, fromPort) -> {
+            Platform.runLater(() -> {
+                // Находим контакт по имени пользователя
+                Contact contact = allContacts.stream()
+                    .filter(c -> c.getName().equals(fromUsername))
+                    .findFirst()
+                    .orElse(null);
+                
+                if (contact != null) {
+                    // Обновляем IP и порт контакта
+                    contact.setIp(fromIp);
+                    contact.setMainPort(fromPort);
+                    contact.setConnected(true);
+                    
+                    // Если это текущий выбранный контакт, обновляем статус
+                    if (currentContact != null && currentContact.getName().equals(fromUsername)) {
+                        updateConnectionStatus(true);
+                        showAlert("Connection Restored", 
+                            "Connection with " + fromUsername + " has been restored automatically.");
+                    }
+                } else {
+                    // Если контакт не найден, создаем новый диалог
+                    createNewContactDialog(fromUsername, fromIp, fromPort);
+                }
+            });
+        });
+
+        // Устанавливаем слушателя для новых подключений
+        p2pManager.getP2pInviteManager().setInviteListener(new P2PInviteManager.P2PInviteListener() {
+            @Override
+            public void onInviteAccepted(String fromUsername, String fromIp, int fromPort) {
+                Platform.runLater(() -> {
+                    // Проверяем, существует ли уже контакт
+                    Contact existingContact = allContacts.stream()
+                        .filter(c -> c.getName().equals(fromUsername))
+                        .findFirst()
+                        .orElse(null);
+
+                    if (existingContact == null) {
+                        // Создаем новый диалог для нового контакта
+                        createNewContactDialog(fromUsername, fromIp, fromPort);
+                    } else {
+                        // Обновляем существующий контакт
+                        existingContact.setIp(fromIp);
+                        existingContact.setMainPort(fromPort);
+                        existingContact.setConnected(true);
+                        if (currentContact != null && currentContact.getName().equals(fromUsername)) {
+                            updateConnectionStatus(true);
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void onInviteRejected(String fromUsername) {
+                Platform.runLater(() -> {
+                    // Находим контакт и обновляем его статус
+                    Contact contact = allContacts.stream()
+                        .filter(c -> c.getName().equals(fromUsername))
+                        .findFirst()
+                        .orElse(null);
+                    
+                    if (contact != null) {
+                        contact.setConnected(false);
+                        if (currentContact != null && currentContact.getName().equals(fromUsername)) {
+                            updateConnectionStatus(false);
+                        }
+                    }
+                    
+                    showAlert("Connection Rejected", 
+                        "Connection request from " + fromUsername + " was rejected.");
+                });
+            }
+
+            @Override
+            public void onReconnectRequest(String fromUsername, String fromIp, int fromPort) {
+                // Обработка повторных подключений уже реализована в ReconnectListener
+            }
+        });
+
+        initialize();
     }
 
     public void initialize() {
@@ -357,13 +442,22 @@ public class MainController {
             listViewHistoryChat.refresh();
         });
 
-        // Добавляем обработчик закрытия окна для вызова logout
+        // Добавляем обработчик закрытия окна для вызова logout и shutdown P2P
         Platform.runLater(() -> {
             Stage stage = (Stage) ListViewDialog.getScene().getWindow();
             stage.setOnCloseRequest(event -> {
+                // Сначала закрываем все P2P соединения
+                if (p2pManager != null) {
+                    System.out.println("Shutting down P2P connections...");
+                    p2pManager.shutdown();
+                }
+                // Затем выполняем logout
                 if (authManager != null) {
+                    System.out.println("Logging out...");
                     authManager.logoutFromApi();
                 }
+                // Сохраняем последнее состояние
+                saveLocalData();
             });
         });
 
@@ -376,41 +470,49 @@ public class MainController {
                 userSearchResults.setVisible(false);
             }
         });
+
+        repeatButton.setOnAction(e -> handleRepeatButton());
+    }
+
+    private void updateConnectionStatus(boolean isConnected) {
+        if (currentContact != null) {
+            currentContact.setConnected(isConnected);
+            Platform.runLater(() -> {
+                if (connectionStatusLabel != null) {
+                    connectionStatusLabel.setText(isConnected ? "Connected" : "Disconnected");
+                    connectionStatusLabel.setStyle(isConnected ? 
+                        "-fx-text-fill: green;" : "-fx-text-fill: red;");
+                }
+            });
+        }
     }
 
     private void handleDisconnect() {
-        if (currentHistory == null || currentContact == null) {
-            return;
+        if (currentContact != null) {
+            p2pManager.getP2pConnectionManager().removeContact(currentContact);
+            currentContact.setConnected(false);
+            updateConnectionStatus(false);
+            showAlert("Disconnected", 
+                "Connection with " + currentContact.getName() + " has been terminated.");
         }
-
-        Alert alert = new Alert(AlertType.CONFIRMATION);
-        alert.setTitle("Подтверждение отключения");
-        alert.setHeaderText("Отключить диалог?");
-        alert.setContentText("Вы уверены, что хотите отключить диалог с " + currentContact.getName() + "? В будущем это действие также разорвет P2P соединение.");
-
-        alert.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                disconnectDialog();
-            }
-        });
     }
 
     private void disconnectDialog() {
         if (currentContact == null) return;
-        // Отключаем только текущий диалог
+        // Отключаем диалог
         disconnectedContacts.add(currentContact);
         listViewHistoryChat.setItems(FXCollections.observableArrayList());
         chatNameLabel.setText("Диалог отключен");
         chatNameLabel.setStyle("-fx-text-fill: red; -fx-font-size: 18;");
         chatTimeLabel.setText("");
+        connectionStatusLabel.setText("Disconnected");
+        connectionStatusLabel.setStyle("-fx-text-fill: #f44336; -fx-font-size: 12;");
         disconnectButton.setDisable(true);
         sendButton.setDisable(true);
         sendTextField.setDisable(true);
         // Обновляем отображение в списке контактов
         ListViewDialog.refresh();
-        // В будущем здесь будет код для разрыва P2P соединения
-        System.out.println("P2P соединение будет разорвано с " + currentContact.getName());
-        saveLocalData(); // Автоматическое сохранение
+        saveLocalData();
     }
 
     private void restoreDialog() {
@@ -419,15 +521,33 @@ public class MainController {
         updateDialogView(currentContact);
         // Обновляем отображение в списке контактов
         ListViewDialog.refresh();
-        // В будущем здесь будет код для восстановления P2P соединения
-        System.out.println("P2P соединение будет восстановлено с " + currentContact.getName());
-        saveLocalData(); // Автоматическое сохранение
+        // Пытаемся восстановить P2P соединение
+        if (p2pManager != null) {
+            new Thread(() -> {
+                boolean success = p2pManager.requestP2PChannel(currentContact);
+                Platform.runLater(() -> {
+                    updateConnectionStatus(success);
+                    if (!success) {
+                        Alert alert = new Alert(AlertType.WARNING);
+                        alert.setTitle("Ошибка P2P соединения");
+                        alert.setHeaderText("Не удалось восстановить P2P соединение");
+                        alert.setContentText("Попытка восстановить P2P соединение с " + currentContact.getName() + " не удалась.");
+                        alert.showAndWait();
+                    }
+                });
+            }).start();
+        }
+        saveLocalData();
     }
 
     private void updateDialogView(Contact contact) {
         chatNameLabel.setText(contact.getName());
         chatTimeLabel.setText(contact.getTime());
         currentHistory = messageHistories.get(contact);
+        if (currentHistory == null) {
+            currentHistory = new HistoryMessages(currentUser, contact);
+            messageHistories.put(contact, currentHistory);
+        }
         listViewHistoryChat.setItems(currentHistory.getMessages());
         disconnectButton.setDisable(false);
         sendButton.setDisable(false);
@@ -435,8 +555,12 @@ public class MainController {
         // Обновляем стили заголовка
         chatNameLabel.setStyle("-fx-text-fill: white; -fx-font-size: 18;");
         chatTimeLabel.setStyle("-fx-text-fill: white; -fx-font-size: 14;");
+        
+        // Используем статус из контакта
+        updateConnectionStatus(contact.isConnected());
+        
         // Автоскролл к последнему сообщению при переключении диалога
-        javafx.application.Platform.runLater(() -> {
+        Platform.runLater(() -> {
             if (listViewHistoryChat.getItems().size() > 0) {
                 listViewHistoryChat.scrollTo(listViewHistoryChat.getItems().size() - 1);
             }
@@ -590,5 +714,120 @@ public class MainController {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    @FXML
+    private void handleRepeatButton() {
+        if (currentContact != null && p2pManager != null) {
+            new Thread(() -> {
+                boolean success = p2pManager.requestP2PChannel(currentContact);
+                Platform.runLater(() -> {
+                    updateConnectionStatus(success);
+                    Alert alert = new Alert(success ? AlertType.INFORMATION : AlertType.WARNING);
+                    alert.setTitle("P2P соединение");
+                    alert.setHeaderText(success ? "P2P соединение установлено!" : "Не удалось установить P2P соединение");
+                    alert.setContentText(success
+                            ? "Соединение с " + currentContact.getName() + " успешно установлено."
+                            : "Попытка установить P2P соединение с " + currentContact.getName() + " не удалась.");
+                    alert.showAndWait();
+                });
+            }).start();
+        }
+    }
+
+    // Добавляем метод для принудительного закрытия всех соединений
+    public void shutdown() {
+        if (p2pManager != null) {
+            System.out.println("Shutting down all P2P connections...");
+            p2pManager.shutdown();
+        }
+        // Сохраняем состояние перед выходом
+        saveLocalData();
+    }
+
+    private void handleAutoReconnect(Contact contact) {
+        if (contact != null) {
+            updateConnectionStatus(true);
+            showAlert("Connection Restored", 
+                "Connection with " + contact.getName() + " has been restored automatically.");
+        }
+    }
+
+    private void showAlert(String title, String content) {
+        Alert alert = new Alert(AlertType.INFORMATION);
+        alert.setTitle(title);
+        alert.setContentText(content);
+        alert.showAndWait();
+    }
+
+    private void createNewContactDialog(String username, String ip, int port) {
+        // Проверяем, есть ли уже контакт с таким именем
+        Contact existingContact = allContacts.stream()
+            .filter(c -> c.getName().equals(username))
+            .findFirst()
+            .orElse(null);
+        if (existingContact != null) {
+            // Если контакт уже есть, просто выбираем его и обновляем статус
+            Platform.runLater(() -> {
+                ListViewDialog.getSelectionModel().select(existingContact);
+                updateDialogView(existingContact);
+                existingContact.setIp(ip);
+                existingContact.setMainPort(port);
+                existingContact.setConnected(true);
+                updateConnectionStatus(true);
+            });
+            return;
+        }
+        // Создаем новый контакт
+        Contact newContact = new Contact(username,
+            java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
+            "/images/image.png");
+        newContact.setIp(ip);
+        newContact.setMainPort(port);
+        
+        // Создаем новый диалог
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("New Connection");
+        dialog.setHeaderText("New connection request from " + username);
+        
+        // Добавляем кнопки
+        ButtonType acceptButton = new ButtonType("Accept", ButtonBar.ButtonData.OK_DONE);
+        ButtonType rejectButton = new ButtonType("Reject", ButtonBar.ButtonData.CANCEL_CLOSE);
+        dialog.getDialogPane().getButtonTypes().addAll(acceptButton, rejectButton);
+
+        // Обработка результата диалога
+        dialog.showAndWait().ifPresent(response -> {
+            if (response == acceptButton) {
+                // Добавляем контакт в P2P менеджер
+                p2pManager.getP2pConnectionManager().addContact(newContact);
+                
+                // Обновляем UI
+                Platform.runLater(() -> {
+                    allContacts.add(newContact);
+                    filteredContacts.add(newContact);
+                    ListViewDialog.getItems().add(newContact);
+                    
+                    // Создаем историю сообщений для нового контакта
+                    HistoryMessages history = new HistoryMessages(currentUser, newContact);
+                    messageHistories.put(newContact, history);
+                    
+                    // Выбираем новый контакт
+                    ListViewDialog.getSelectionModel().select(newContact);
+                    updateDialogView(newContact);
+                    
+                    // Устанавливаем статус соединения
+                    newContact.setConnected(true);
+                    updateConnectionStatus(true);
+                    
+                    showAlert("Connection Established", 
+                        "Connection with " + username + " has been established.");
+                });
+            } else {
+                // Отклоняем подключение
+                p2pManager.getP2pInviteManager().rejectInvite(username);
+                allContacts.remove(newContact);
+                filteredContacts.remove(newContact);
+            }
+        });
     }
 }
