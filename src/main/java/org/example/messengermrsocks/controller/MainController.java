@@ -70,16 +70,30 @@ public class MainController {
     private AuthManager authManager;
     private Map<Contact, String> draftMessages = new HashMap<>();
 
+    public void setAuthManager(AuthManager authManager) {
+        this.authManager = authManager;
+        if (authManager != null && authManager.isAuthenticated()) {
+            this.currentUser = authManager.getCurrentUser();
+            initialize();
+        }
+    }
+
     public void initialize() {
+        if (currentUser == null) {
+            return; // Не инициализируем, если пользователь не установлен
+        }
+
         // --- Загрузка данных из локального хранилища ---
         try {
-            MessengerData loaded = SecureLocalStorageService.loadData(MessengerData.class);
+            MessengerData loaded = SecureLocalStorageService.loadData(MessengerData.class, currentUser);
             if (loaded != null) {
                 localData = loaded;
+            } else {
+                localData = new MessengerData(currentUser);
             }
         } catch (Exception e) {
             e.printStackTrace();
-            localData = new MessengerData();
+            localData = new MessengerData(currentUser);
         }
 
         // --- Привязка к UI ---
@@ -477,21 +491,6 @@ public class MainController {
             SecureLocalStorageService.saveData(localData);
         } catch (Exception e) {
             e.printStackTrace();
-        }
-    }
-
-    public void setAuthManager(AuthManager authManager) {
-        this.authManager = authManager;
-        // Инициализация сетевых компонентов после аутентификации
-        initializeNetworkComponents();
-    }
-
-    private void initializeNetworkComponents() {
-        // Инициализация P2P соединения и других сетевых компонентов
-        if (authManager != null && authManager.isAuthenticated()) {
-            // TODO: Инициализация сетевых компонентов
-            System.out.println("Initializing network components for user: " + 
-                             authManager.getCurrentUser().getName());
         }
     }
 }

@@ -1,8 +1,12 @@
 package org.example.messengermrsocks.model.Messages;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Message {
+
+    private String type;
     private String date;
     private String time;
     private String mainText;
@@ -14,10 +18,12 @@ public class Message {
     private boolean isSent;
     private boolean isReceived;
     private String mediaFilePath;
+    private String payload;
 
     public Message() {}
 
     public Message(String text, String time, String avatarUrl, boolean isOwn) {
+        this.type = "text";
         this.text = text;
         this.time = time;
         this.avatarUrl = avatarUrl;
@@ -29,9 +35,12 @@ public class Message {
 
     public Message(String text, String time, String avatarUrl, boolean isOwn, String mediaFilePath) {
         this(text, time, avatarUrl, isOwn);
+        this.type = "media";
         this.mediaFilePath = mediaFilePath;
     }
 
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
     public String getDate() { return date; }
     public void setDate(String date) { this.date = date; }
     public String getTime() { return time; }
@@ -53,5 +62,8 @@ public class Message {
     public boolean isReceived() { return isReceived; }
     public void setReceived(boolean received) { isReceived = received; }
     public String getMediaFilePath() { return mediaFilePath; }
-    public void setMediaFilePath(String path) { this.mediaFilePath = path; }
+    public void setMediaFilePath(String mediaFilePath) { this.mediaFilePath = mediaFilePath; }
+    public String getPayload() { return payload; }
+    public void setPayload(String payload) { this.payload = payload; }
+
 }

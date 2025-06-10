@@ -9,6 +9,8 @@ import javafx.stage.Stage;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import java.io.IOException;
+import java.awt.Desktop;
+import java.net.URI;
 import org.example.messengermrsocks.Networks.AuthManager;
 
 public class AuthController {
@@ -84,7 +86,8 @@ public class AuthController {
                 if (success) {
                     openMainWindow();
                 } else {
-                    showError("Неверный email или пароль");
+                    String errorMessage = authManager.getLastError();
+                    showError(errorMessage != null ? errorMessage : "Ошибка авторизации");
                     signInButton.setDisable(false);
                     registerButton.setDisable(false);
                 }
@@ -94,31 +97,16 @@ public class AuthController {
 
     @FXML
     private void handleRegister() {
-        String email = emailField.getText().trim();
-        String password = passwordField.getText().trim();
-
-        if (email.isEmpty() || password.isEmpty()) {
-            showError("Пожалуйста, заполните все поля");
-            return;
+        try {
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                Desktop.getDesktop().browse(new URI("http://localhost:8080/register.html"));
+            } else {
+                showError("Не удалось открыть браузер");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Ошибка при открытии страницы регистрации");
         }
-
-        signInButton.setDisable(true);
-        registerButton.setDisable(true);
-
-        // Запускаем регистрацию в отдельном потоке
-        new Thread(() -> {
-            boolean success = authManager.register(email, password);
-            
-            javafx.application.Platform.runLater(() -> {
-                if (success) {
-                    showError("Регистрация успешна. Теперь вы можете войти.");
-                } else {
-                    showError("Ошибка при регистрации. Возможно, пользователь уже существует.");
-                }
-                signInButton.setDisable(false);
-                registerButton.setDisable(false);
-            });
-        }).start();
     }
 
     @FXML
