@@ -30,10 +30,12 @@ public class SendManager implements SendProvider {
     private final SecureRandom secureRandom;
     private static final String ALGORITHM = "AES";
     private final AtomicInteger messageCounter = new AtomicInteger(0);
+    private final org.example.messengermrsocks.model.Peoples.User currentUser;
 
     public SendManager(P2PInviteManager p2pInviteManager) {
         this.p2pInviteManager = p2pInviteManager;
         this.secureRandom = new SecureRandom();
+        this.currentUser = p2pInviteManager.getCurrentUser();
     }
 
     @Override
@@ -78,7 +80,6 @@ public class SendManager implements SendProvider {
     @Override
     public void sendSelfOpenKeyToContact(String selfOpenKey) {
         // In a real implementation, this would send the key through P2P
-        System.out.println("Sending open key: " + selfOpenKey);
     }
 
     @Override
@@ -101,12 +102,10 @@ public class SendManager implements SendProvider {
 
     @Override
     public Boolean sendMessage(String text, Contact contact) {
-        System.out.println("[SendManager] sendMessage вызван для контакта: " + contact.getName() + ", IP: " + contact.getIp());
         try {
             // Получаем защищённую сессию для контакта
             P2PSession session = p2pInviteManager.getSessionMap().get(contact.getName());
             if (session == null) {
-                System.err.println("No secure session for contact: " + contact.getName());
                 return false;
             }
             P2PMessageSender sender = new P2PMessageSender(session.getAesKey(), session.getHmacKey());
@@ -115,6 +114,8 @@ public class SendManager implements SendProvider {
             Message message = new Message(text, 
                 java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
                 "/images/image.png", true);
+            // Устанавливаем mainText (username отправителя)
+            message.setMainText(currentUser.getUsername());
             byte[] messageBytes = serializeMessage(message);
 
             // Генерируем уникальный messageId
@@ -122,22 +123,14 @@ public class SendManager implements SendProvider {
 
             // Фрагментируем и шифруем
             List<P2PFragment> fragments = sender.fragmentAndEncrypt(messageBytes, messageId);
-            System.out.println("[SendManager] Количество фрагментов сообщения: " + fragments.size());
 
             // Получаем remotePorts для контакта
             List<Integer> ports = p2pInviteManager.getRemotePorts(contact.getName());
-            System.out.println("[SendManager] Полученные порты для контакта: " + ports);
             if (ports == null) {
-                System.err.println("[SendManager] Нет remotePorts для контакта, fallback на генерацию портов!");
                 ports = generatePorts(fragments.size());
-                System.out.println("[SendManager] Сгенерированы новые порты: " + ports);
             } else if (ports.size() < fragments.size()) {
-                System.err.println("[SendManager] Недостаточно портов (портов: " + ports.size() + ", фрагментов: " + fragments.size() + "), fallback на генерацию портов!");
                 ports = generatePorts(fragments.size());
-                System.out.println("[SendManager] Сгенерированы новые порты: " + ports);
             } else if (ports.size() > fragments.size()) {
-                // Если портов больше чем фрагментов, берем только нужное количество портов
-                System.out.println("[SendManager] Портов больше чем фрагментов, используем первые " + fragments.size() + " портов");
                 ports = ports.subList(0, fragments.size());
             }
             message.setListNextPort(ports);
@@ -175,10 +168,8 @@ public class SendManager implements SendProvider {
                 try (Socket socket = new Socket(ip, port);
                      ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())) {
                     out.writeObject(fragments.get(fragmentIndex));
-                    System.out.println("[SendManager] Фрагмент " + fragmentIndex + " успешно отправлен на " + ip + ":" + port);
                     return true;
                 } catch (IOException e) {
-                    System.err.println("[SendManager] Ошибка отправки фрагмента " + fragmentIndex + " на " + ip + ":" + port + ": " + e.getMessage());
                     return false;
                 }
             });

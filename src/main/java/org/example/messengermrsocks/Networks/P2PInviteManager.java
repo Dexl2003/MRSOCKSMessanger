@@ -23,11 +23,14 @@ import javax.crypto.SecretKey;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Random;
+import java.net.SocketTimeoutException;
+import java.net.ConnectException;
 
 public class P2PInviteManager {
     private static final int INVITE_PORT = 9000;
@@ -43,12 +46,13 @@ public class P2PInviteManager {
     // Сессии по имени пользователя
     private final Map<String, P2PSession> sessionMap = new ConcurrentHashMap<>();
     private final Map<String, List<Integer>> remotePortsMap = new ConcurrentHashMap<>();
-    private final Map<String, List<Integer>> myPortsMap = new ConcurrentHashMap<>();  // Добавляем мапу для хранения наших портов
+    public final Map<String, List<Integer>> myPortsMap = new ConcurrentHashMap<>();  // Добавляем мапу для хранения наших портов
 
     public interface P2PInviteListener {
         void onInviteAccepted(String fromUsername, String fromIp, int fromPort);
         void onInviteRejected(String fromUsername);
         void onReconnectRequest(String fromUsername, String fromIp, int fromPort);
+        void onContactDeleted(String fromUsername);
     }
 
     public P2PInviteManager(User currentUser, P2PInviteListener listener) {
@@ -86,13 +90,34 @@ public class P2PInviteManager {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
                  PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true)) {
                 
-                String jsonInvite = reader.readLine();
-                if (jsonInvite == null) {
+                String line = reader.readLine();
+                if (line == null) {
                     System.err.println("No invite received");
                     return;
                 }
-                System.out.println("Received invite: " + jsonInvite);
-                P2PInvite invite = objectMapper.readValue(jsonInvite, P2PInvite.class);
+                System.out.println("Received invite: " + line);
+                if (line.startsWith("DISCONNECT:")) {
+                    String fromUser = line.substring("DISCONNECT:".length());
+                    sessionMap.remove(fromUser);
+                    remotePortsMap.remove(fromUser);
+                    myPortsMap.remove(fromUser);
+                    if (inviteListener != null) {
+                        javafx.application.Platform.runLater(() -> inviteListener.onInviteRejected(fromUser));
+                    }
+                    return;
+                }
+                if (line.startsWith("DELETE_CONTACT:")) {
+                    String fromUser = line.substring("DELETE_CONTACT:".length());
+                    sessionMap.remove(fromUser);
+                    remotePortsMap.remove(fromUser);
+                    myPortsMap.remove(fromUser);
+                    if (inviteListener != null) {
+                        javafx.application.Platform.runLater(() -> inviteListener.onContactDeleted(fromUser));
+                    }
+                    return;
+                }
+                // Только если это не DISCONNECT, парсим как JSON
+                P2PInvite invite = objectMapper.readValue(line, P2PInvite.class);
                 System.out.println("handleIncomingConnection: удаленный IP (откуда пришел запрос) = " + socket.getInetAddress().getHostAddress());
                 
                 // Генерируем ECDH-ключи для этой сессии
@@ -205,64 +230,67 @@ public class P2PInviteManager {
         return sessionMap;
     }
 
-    public boolean sendInvite(String targetUsername, String targetIp, int targetPort) {
-        if (targetIp == null || targetPort <= 0) {
-            System.err.println("Invalid target IP or port for " + targetUsername);
+    public boolean sendInvite(String toUsername, String toIp, int toPort) {
+        if (toIp == null || toPort <= 0) {
+            System.err.println("[P2PInviteManager] Неверный IP или порт для " + toUsername);
             return false;
         }
-        try (Socket socket = new Socket(targetIp, targetPort);
-             PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
-
+        try {
+            Socket socket = new Socket();
+            socket.connect(new InetSocketAddress(toIp, toPort), 5000); // 5 секунд таймаут
+            
+            PrintWriter writer = new PrintWriter(socket.getOutputStream(), true);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            
             // Генерируем ECDH-ключи для этой сессии
             KeyPair ecdhKeyPair = P2PCryptoUtil.generateECDHKeyPair();
             String myPubKeyBase64 = Base64.getEncoder().encodeToString(ecdhKeyPair.getPublic().getEncoded());
-
+            
             // Генерируем список портов для приёма фрагментов
             List<Integer> myPorts = generatePortsForP2P();
             // Сохраняем наши порты для этого контакта
-            myPortsMap.put(targetUsername, myPorts);
-            System.out.println("[P2PInviteManager] Сохранены наши порты для " + targetUsername + ": " + myPorts);
-
+            myPortsMap.put(toUsername, myPorts);
+            
             // Формируем инвайт с публичным ключом и портами
             P2PInvite invite = new P2PInvite(
                 currentUser.getUsername(),
-                targetUsername,
+                toUsername,
                 socket.getLocalAddress().getHostAddress(),
                 INVITE_PORT,
                 myPubKeyBase64,
                 myPorts
             );
-
+            
             String jsonInvite = objectMapper.writeValueAsString(invite);
-            System.out.println("Sending invite to " + targetUsername + " at " + targetIp + ":" + targetPort);
-            System.out.println("Invite content: " + jsonInvite);
             writer.println(jsonInvite);
-
-            String jsonResponse = reader.readLine();
-            if (jsonResponse == null) {
-                System.err.println("No response received from " + targetUsername);
+            
+            // Ждем ответа
+            String response = reader.readLine();
+            if (response == null) {
+                System.err.println("[P2PInviteManager] Не получен ответ от " + toUsername);
                 return false;
             }
-
-            System.out.println("Received response: " + jsonResponse);
-            P2PInviteResponse response = objectMapper.readValue(jsonResponse, P2PInviteResponse.class);
-
+            
+            P2PInviteResponse inviteResponse = objectMapper.readValue(response, P2PInviteResponse.class);
+            if (!inviteResponse.isAccepted()) {
+                System.err.println("[P2PInviteManager] Пользователь " + toUsername + " отклонил приглашение");
+                return false;
+            }
+            
             // Получаем публичный ключ собеседника из ответа
-            String remotePubKeyBase64 = response.getEcdhPublicKeyBase64();
+            String remotePubKeyBase64 = inviteResponse.getEcdhPublicKeyBase64();
             PublicKey remotePubKey = null;
             if (remotePubKeyBase64 != null) {
                 byte[] remotePubKeyBytes = Base64.getDecoder().decode(remotePubKeyBase64);
                 remotePubKey = KeyFactory.getInstance("EC").generatePublic(new X509EncodedKeySpec(remotePubKeyBytes));
             }
-
+            
             // Сохраняем remotePorts для дальнейшей отправки сообщений
-            List<Integer> remotePorts = response.getPorts();
+            List<Integer> remotePorts = inviteResponse.getPorts();
             if (remotePorts != null) {
-                System.out.println("[P2PInviteManager] Получен список портов собеседника: " + remotePorts);
-                remotePortsMap.put(targetUsername, remotePorts);
+                remotePortsMap.put(toUsername, remotePorts);
             }
-
+            
             // Вычисляем общий секрет и сессионные ключи
             if (remotePubKey != null) {
                 byte[] sharedSecret = P2PCryptoUtil.computeSharedSecret(ecdhKeyPair.getPrivate(), remotePubKey);
@@ -270,19 +298,22 @@ public class P2PInviteManager {
                 SecretKey hmacKey = P2PCryptoUtil.deriveHMACKey(sharedSecret);
                 P2PSession session = new P2PSession(aesKey, hmacKey, ecdhKeyPair);
                 session.setRemoteECDHPublicKey(remotePubKey);
-                sessionMap.put(targetUsername, session);
+                sessionMap.put(toUsername, session);
             }
-
-            boolean accepted = response.isAccepted();
-            if (accepted && inviteListener != null) {
-                System.out.println("[P2PInviteManager] Вызываем onInviteAccepted для " + targetUsername + " (отправитель инвайта)");
-                inviteListener.onInviteAccepted(targetUsername, targetIp, targetPort);
+            
+            if (inviteListener != null) {
+                inviteListener.onInviteAccepted(toUsername, toIp, toPort);
             }
-
-            return accepted;
+            
+            return true;
+        } catch (SocketTimeoutException e) {
+            System.err.println("[P2PInviteManager] Таймаут при подключении к " + toUsername);
+            return false;
+        } catch (ConnectException e) {
+            System.err.println("[P2PInviteManager] Не удалось подключиться к " + toUsername + ": " + e.getMessage());
+            return false;
         } catch (Exception e) {
-            System.err.println("Error sending invite to " + targetUsername + ": " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("[P2PInviteManager] Ошибка при отправке приглашения " + toUsername + ": " + e.getMessage());
             return false;
         }
     }
@@ -344,5 +375,29 @@ public class P2PInviteManager {
         System.out.println("[P2PInviteManager] Запрос НАШИХ портов для " + username + ": " + ports);
         System.out.println("[P2PInviteManager] Текущее состояние myPortsMap: " + myPortsMap);
         return ports;
+    }
+
+    public void sendDisconnect(String targetIp, String fromUsername) {
+        try (Socket socket = new Socket(targetIp, INVITE_PORT);
+             PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8), true)) {
+            String disconnectMsg = "DISCONNECT:" + fromUsername;
+            writer.println(disconnectMsg);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void sendDeleteContact(String targetIp, String fromUsername) {
+        try (Socket socket = new Socket(targetIp, INVITE_PORT);
+             PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8), true)) {
+            String deleteMsg = "DELETE_CONTACT:" + fromUsername;
+            writer.println(deleteMsg);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public User getCurrentUser() {
+        return currentUser;
     }
 } 

@@ -51,6 +51,11 @@ import org.example.messengermrsocks.Networks.P2PManager;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.ButtonBar;
 import org.example.messengermrsocks.Networks.P2PInviteManager;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import javafx.scene.control.ProgressBar;
 
 public class MainController {
     @FXML private ListView<Contact> ListViewDialog;
@@ -65,6 +70,7 @@ public class MainController {
     @FXML private Button attachButton;
     @FXML private ListView<User> userSearchResults;
     @FXML private Button repeatButton;
+    @FXML private ProgressBar uploadProgressBar;
 
     private Map<Contact, HistoryMessages> messageHistories;
     private HistoryMessages currentHistory;
@@ -78,6 +84,16 @@ public class MainController {
     private AuthManager authManager;
     private Map<Contact, String> draftMessages = new HashMap<>();
     private P2PManager p2pManager;
+    private static final String MEDIA_DIR = "user_data/media/";
+    private static final int UPLOAD_TIMEOUT_SECONDS = 120; // 2 минуты таймаут
+
+    static {
+        try {
+            Files.createDirectories(Path.of(MEDIA_DIR));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     public void setAuthManager(AuthManager authManager) {
         this.authManager = authManager;
@@ -124,6 +140,16 @@ public class MainController {
         for (Contact contact : allContacts) {
             if (disconnectedNames.contains(contact.getName())) {
                 disconnectedContacts.add(contact);
+            }
+        }
+
+        // --- Восстановление P2P соединений при запуске ---
+        for (Contact contact : allContacts) {
+            if (!disconnectedContacts.contains(contact)) {
+                new Thread(() -> {
+                    boolean success = p2pManager.requestP2PChannel(contact);
+                    // Можно обновить UI по результату, если нужно
+                }).start();
             }
         }
 
@@ -218,6 +244,8 @@ public class MainController {
                                         chatTimeLabel.setText("");
                                     }
                                     saveLocalData(); // Автоматическое сохранение
+                                    // После локального удаления:
+                                    p2pManager.getP2pInviteManager().sendDeleteContact(contact.getIp(), currentUser.getUsername());
                                 }
                             });
                         });
@@ -367,7 +395,7 @@ public class MainController {
                 // Сначала закрываем все P2P соединения
                 if (p2pManager != null) {
                     System.out.println("Shutting down P2P connections...");
-                    p2pManager.shutdown();
+                    shutdown();
                 }
                 // Затем выполняем logout
                 if (authManager != null) {
@@ -417,31 +445,61 @@ public class MainController {
         // Устанавливаем слушатель для обновления UI при получении сообщения
         p2pManager.getP2pConnectionManager().setOnMessageReceived((senderIp, messageBytes) -> {
             try {
-                // Десериализуем сообщение
                 Message message = deserializeMessage(messageBytes);
                 if (message != null) {
-                    // Находим контакт по IP
-                    Contact sender = allContacts.stream()
-                        .filter(c -> c.getIp().equals(senderIp))
-                        .findFirst()
-                        .orElse(null);
-                    
-                    if (sender != null) {
-                        message.setOwn(false); // Входящее сообщение всегда не наше
-                        Platform.runLater(() -> {
-                            // Добавляем сообщение в историю
-                            HistoryMessages history = messageHistories.get(sender);
-                            if (history != null) {
-                                history.addMessage(message);
-                                // Если это текущий контакт, обновляем UI
-                                if (currentContact != null && currentContact.getName().equals(sender.getName())) {
-                                    updateDialogView(sender);
-                                }
-                                // Сохраняем изменения
-                                saveLocalData();
+                    Platform.runLater(() -> {
+                        System.out.println("[onMessageReceived] Получено сообщение от IP: " + senderIp);
+                        System.out.println("[onMessageReceived] mainText (имя): " + message.getMainText());
+                        System.out.println("[onMessageReceived] text: " + message.getText());
+                        System.out.println("[onMessageReceived] Текущий список контактов: ");
+                        for (Contact c : allContacts) {
+                            System.out.println("  - " + c.getName() + " (ip: " + c.getIp() + ")");
+                        }
+                        Contact contact = allContacts.stream()
+                            .filter(c -> c.getName().equals(message.getMainText()))
+                            .findFirst()
+                            .orElse(null);
+                        if (contact == null) {
+                            String senderName = message.getMainText();
+                            System.out.println("[onMessageReceived] Контакт не найден по имени. Имя для создания: '" + senderName + "'");
+                            if (senderName == null || senderName.trim().isEmpty()) {
+                                System.out.println("[onMessageReceived] Имя отсутствует, контакт не будет создан!");
+                                return;
                             }
-                        });
-                    }
+                            contact = new Contact(senderName, message.getTime(), "/images/image.png");
+                            contact.setIp(senderIp);
+                            allContacts.add(contact);
+                            filteredContacts.add(contact);
+                            messageHistories.put(contact, new HistoryMessages(currentUser, contact));
+                            updateDialogView(contact);
+                            ListViewDialog.getSelectionModel().select(contact);
+                            System.out.println("[onMessageReceived] Новый контакт создан и добавлен: " + senderName);
+                        } else {
+                            if (!contact.getIp().equals(senderIp)) {
+                                System.out.println("[onMessageReceived] Обновляю IP контакта: " + contact.getName() + " с " + contact.getIp() + " на " + senderIp);
+                                contact.setIp(senderIp);
+                            }
+                        }
+                        message.setOwn(false);
+                        HistoryMessages history = messageHistories.get(contact);
+                        if (history == null) {
+                            System.out.println("[onMessageReceived] История для контакта не найдена, создаю новую.");
+                            history = new HistoryMessages(currentUser, contact);
+                            messageHistories.put(contact, history);
+                        }
+                        history.addMessage(message);
+                        message.setReceived(true);
+                        System.out.println("[onMessageReceived] Сообщение добавлено в историю контакта: " + contact.getName());
+                        if (currentContact == null || currentContact.getName().equals(contact.getName())) {
+                            currentContact = contact;
+                            updateDialogView(contact);
+                            System.out.println("[onMessageReceived] Обновлен текущий контакт и UI: " + contact.getName());
+                        }
+                        listViewHistoryChat.setItems(history.getMessages());
+                        listViewHistoryChat.scrollTo(listViewHistoryChat.getItems().size() - 1);
+                        saveLocalData();
+                        System.out.println("[onMessageReceived] История сообщений обновлена и сохранена.");
+                    });
                 }
             } catch (Exception e) {
                 System.err.println("[MainController] Ошибка при обработке входящего сообщения: " + e.getMessage());
@@ -454,22 +512,22 @@ public class MainController {
             @Override
             public void onInviteAccepted(String fromUsername, String fromIp, int fromPort) {
                 Platform.runLater(() -> {
-                    // Проверяем, существует ли уже контакт
                     Contact existingContact = allContacts.stream()
                         .filter(c -> c.getName().equals(fromUsername))
                         .findFirst()
                         .orElse(null);
 
                     if (existingContact == null) {
-                        // Создаем новый диалог для нового контакта
                         createNewContactDialog(fromUsername, fromIp, fromPort);
                     } else {
-                        // Обновляем существующий контакт
                         existingContact.setIp(fromIp);
                         existingContact.setMainPort(fromPort);
                         existingContact.setConnected(true);
                         if (currentContact != null && currentContact.getName().equals(fromUsername)) {
                             updateConnectionStatus(true);
+                            disconnectButton.setDisable(false);
+                            sendButton.setDisable(false);
+                            sendTextField.setDisable(false);
                         }
                     }
                 });
@@ -486,6 +544,10 @@ public class MainController {
                         contact.setConnected(false);
                         if (currentContact != null && currentContact.getName().equals(fromUsername)) {
                             updateConnectionStatus(false);
+                            showAlert("Disconnected by companion", "Connection with " + fromUsername + " was terminated by the companion.");
+                            disconnectButton.setDisable(true);
+                            sendButton.setDisable(true);
+                            sendTextField.setDisable(true);
                         }
                     }
                 });
@@ -493,7 +555,36 @@ public class MainController {
 
             @Override
             public void onReconnectRequest(String fromUsername, String fromIp, int fromPort) {
-                // Обработка реконнекта уже реализована в ReconnectListener
+                Platform.runLater(() -> {
+                    if (currentContact != null && currentContact.getName().equals(fromUsername)) {
+                        updateConnectionStatus(true);
+                        disconnectButton.setDisable(false);
+                        sendButton.setDisable(false);
+                        sendTextField.setDisable(false);
+                    }
+                });
+            }
+
+            @Override
+            public void onContactDeleted(String fromUsername) {
+                Platform.runLater(() -> {
+                    Contact contactToDelete = allContacts.stream()
+                        .filter(c -> c.getName().equals(fromUsername))
+                        .findFirst()
+                        .orElse(null);
+                    if (contactToDelete != null) {
+                        allContacts.remove(contactToDelete);
+                        filteredContacts.remove(contactToDelete);
+                        messageHistories.remove(contactToDelete);
+                        disconnectedContacts.remove(contactToDelete);
+                        saveLocalData();
+                        if (currentContact == contactToDelete) {
+                            listViewHistoryChat.setItems(FXCollections.observableArrayList());
+                            chatNameLabel.setText("");
+                            chatTimeLabel.setText("");
+                        }
+                    }
+                });
             }
         });
     }
@@ -503,9 +594,17 @@ public class MainController {
             currentContact.setConnected(isConnected);
             Platform.runLater(() -> {
                 if (connectionStatusLabel != null) {
-                    connectionStatusLabel.setText(isConnected ? "Connected" : "Disconnected");
+                    connectionStatusLabel.setText(isConnected ? "Подключено" : "Отключено");
                     connectionStatusLabel.setStyle(isConnected ? 
                         "-fx-text-fill: green;" : "-fx-text-fill: red;");
+                    
+                    // Показываем/скрываем кнопку повтора в зависимости от статуса
+                    repeatButton.setVisible(!isConnected);
+                    
+                    // Обновляем состояние кнопок
+                    disconnectButton.setDisable(!isConnected);
+                    sendButton.setDisable(!isConnected);
+                    sendTextField.setDisable(!isConnected);
                 }
             });
         }
@@ -513,11 +612,20 @@ public class MainController {
 
     private void handleDisconnect() {
         if (currentContact != null) {
+            // Отправляем сигнал отключения собеседнику
+            p2pManager.getP2pInviteManager().sendDisconnect(currentContact.getIp(), currentUser.getUsername());
+            // Удаляем контакт из P2P соединения
             p2pManager.getP2pConnectionManager().removeContact(currentContact);
+            // Удаляем сессию из P2PInviteManager
+            p2pManager.getP2pInviteManager().getSessionMap().remove(currentContact.getName());
             currentContact.setConnected(false);
             updateConnectionStatus(false);
             showAlert("Disconnected", 
                 "Connection with " + currentContact.getName() + " has been terminated.");
+            // Блокируем ввод и отправку сообщений для инициатора разрыва
+            disconnectButton.setDisable(true);
+            sendButton.setDisable(true);
+            sendTextField.setDisable(true);
         }
     }
 
@@ -623,14 +731,88 @@ public class MainController {
     }
 
     private void addMediaMessage(File file) {
-        String time = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
-        boolean isImage = file.getName().toLowerCase().matches(".*\\.(png|jpg|jpeg|gif|bmp)$");
-        String text = isImage ? "" : "[Медиа] " + file.getName();
-        Message message = new Message(text, time, "/images/image.png", true, file.getAbsolutePath());
-        currentHistory.addMessage(message);
-        // Автоскролл к последнему сообщению
-        javafx.application.Platform.runLater(() -> listViewHistoryChat.scrollTo(listViewHistoryChat.getItems().size() - 1));
-        saveLocalData(); // Автоматическое сохранение
+        if (file == null || !file.exists()) {
+            System.err.println("[MainController] Файл не существует");
+            return;
+        }
+
+        try {
+            // Проверяем размер файла
+            long fileSize = file.length();
+            if (fileSize > 10 * 1024 * 1024) { // 10MB limit
+                Alert alert = new Alert(AlertType.ERROR);
+                alert.setTitle("Ошибка");
+                alert.setHeaderText("Файл слишком большой");
+                alert.setContentText("Максимальный размер файла - 10MB");
+                alert.showAndWait();
+                return;
+            }
+
+            String time = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
+            boolean isImage = file.getName().toLowerCase().matches(".*\\.(png|jpg|jpeg|gif|bmp)$");
+            String text = isImage ? "" : "[Медиа] " + file.getName();
+            
+            // Создаем сообщение
+            Message message = new Message(text, time, "/images/image.png", true, file.getAbsolutePath());
+            message.setType("media");
+            
+            // Читаем файл и кодируем в base64
+            byte[] fileBytes = Files.readAllBytes(file.toPath());
+            message.setPayload(java.util.Base64.getEncoder().encodeToString(fileBytes));
+            
+            // Добавляем сообщение в историю
+            currentHistory.addMessage(message);
+            Platform.runLater(() -> {
+                listViewHistoryChat.scrollTo(listViewHistoryChat.getItems().size() - 1);
+                uploadProgressBar.setVisible(true);
+                uploadProgressBar.setProgress(0);
+            });
+            
+            // Сохраняем изменения
+            saveLocalData();
+            
+            // Отправляем через P2P в отдельном потоке
+            if (p2pManager != null && currentContact != null) {
+                new Thread(() -> {
+                    try {
+                        boolean sent = p2pManager.getP2pConnectionManager().sendMessage(message, currentContact);
+                        Platform.runLater(() -> {
+                            uploadProgressBar.setVisible(false);
+                            if (sent) {
+                                message.setSent(true);
+                                listViewHistoryChat.refresh();
+                            } else {
+                                System.err.println("[MainController] Не удалось отправить медиафайл");
+                                Alert alert = new Alert(AlertType.ERROR);
+                                alert.setTitle("Ошибка отправки");
+                                alert.setHeaderText("Не удалось отправить файл");
+                                alert.setContentText("Попробуйте отправить файл еще раз");
+                                alert.showAndWait();
+                            }
+                        });
+                    } catch (Exception e) {
+                        Platform.runLater(() -> {
+                            uploadProgressBar.setVisible(false);
+                            System.err.println("[MainController] Ошибка при отправке медиафайла: " + e.getMessage());
+                            e.printStackTrace();
+                            Alert alert = new Alert(AlertType.ERROR);
+                            alert.setTitle("Ошибка");
+                            alert.setHeaderText("Не удалось отправить файл");
+                            alert.setContentText("Произошла ошибка: " + e.getMessage());
+                            alert.showAndWait();
+                        });
+                    }
+                }).start();
+            }
+        } catch (Exception e) {
+            System.err.println("[MainController] Ошибка при подготовке медиафайла: " + e.getMessage());
+            e.printStackTrace();
+            Alert alert = new Alert(AlertType.ERROR);
+            alert.setTitle("Ошибка");
+            alert.setHeaderText("Не удалось подготовить файл");
+            alert.setContentText("Произошла ошибка: " + e.getMessage());
+            alert.showAndWait();
+        }
     }
 
     private void handleSendTextAreaKey(KeyEvent event) {
@@ -679,14 +861,11 @@ public class MainController {
         // Добавляем контакт в список
         allContacts.add(newContact);
         filteredContacts.add(newContact);
-        
         // Создаем историю сообщений
         HistoryMessages history = new HistoryMessages(currentUser, newContact);
         messageHistories.put(newContact, history);
-        
         // Сохраняем изменения
         saveLocalData();
-        
         // Выбираем новый чат
         ListViewDialog.getSelectionModel().select(newContact);
 
@@ -733,18 +912,41 @@ public class MainController {
 
     @FXML
     private void handleRepeatButton() {
-        if (currentContact != null && p2pManager != null) {
+        if (currentContact != null) {
+            // Показываем статус попытки подключения
+            connectionStatusLabel.setText("Подключение...");
+            connectionStatusLabel.setStyle("-fx-text-fill: orange;");
+            
+            // Запускаем попытку подключения в отдельном потоке
             new Thread(() -> {
                 boolean success = p2pManager.requestP2PChannel(currentContact);
+                
+                // Обновляем UI в главном потоке
                 Platform.runLater(() -> {
-                    updateConnectionStatus(success);
-                    Alert alert = new Alert(success ? AlertType.INFORMATION : AlertType.WARNING);
-                    alert.setTitle("P2P соединение");
-                    alert.setHeaderText(success ? "P2P соединение установлено!" : "Не удалось установить P2P соединение");
-                    alert.setContentText(success
-                            ? "Соединение с " + currentContact.getName() + " успешно установлено."
-                            : "Попытка установить P2P соединение с " + currentContact.getName() + " не удалась.");
-                    alert.showAndWait();
+                    if (success) {
+                        connectionStatusLabel.setText("Подключено");
+                        connectionStatusLabel.setStyle("-fx-text-fill: green;");
+                        currentContact.setConnected(true);
+                        disconnectButton.setDisable(false);
+                        sendButton.setDisable(false);
+                        sendTextField.setDisable(false);
+                        repeatButton.setVisible(false);
+                    } else {
+                        connectionStatusLabel.setText("Ошибка подключения");
+                        connectionStatusLabel.setStyle("-fx-text-fill: red;");
+                        currentContact.setConnected(false);
+                        disconnectButton.setDisable(true);
+                        sendButton.setDisable(true);
+                        sendTextField.setDisable(true);
+                        repeatButton.setVisible(true);
+                        
+                        // Показываем диалог с ошибкой
+                        Alert alert = new Alert(AlertType.ERROR);
+                        alert.setTitle("Ошибка подключения");
+                        alert.setHeaderText("Не удалось подключиться к пользователю");
+                        alert.setContentText("Проверьте, что пользователь онлайн и доступен. Вы можете попробовать подключиться снова, нажав кнопку 'Повторить'.");
+                        alert.showAndWait();
+                    }
                 });
             }).start();
         }
@@ -753,7 +955,12 @@ public class MainController {
     // Добавляем метод для принудительного закрытия всех соединений
     public void shutdown() {
         if (p2pManager != null) {
-            System.out.println("Shutting down all P2P connections...");
+            // Отправляем DISCONNECT всем активным контактам
+            for (Contact contact : allContacts) {
+                if (contact.isConnected()) {
+                    p2pManager.getP2pInviteManager().sendDisconnect(contact.getIp(), currentUser.getUsername());
+                }
+            }
             p2pManager.shutdown();
         }
         // Сохраняем состояние перед выходом
@@ -784,7 +991,9 @@ public class MainController {
         if (existingContact != null) {
             // Если контакт уже есть, просто выбираем его и обновляем статус
             Platform.runLater(() -> {
-                ListViewDialog.getSelectionModel().select(existingContact);
+                if (!ListViewDialog.getItems().isEmpty()) {
+                    ListViewDialog.getSelectionModel().select(existingContact);
+                }
                 updateDialogView(existingContact);
                 existingContact.setIp(ip);
                 existingContact.setMainPort(port);
@@ -820,20 +1029,14 @@ public class MainController {
                 Platform.runLater(() -> {
                     allContacts.add(newContact);
                     filteredContacts.add(newContact);
-                    ListViewDialog.getItems().add(newContact);
-                    
-                    // Создаем историю сообщений для нового контакта
                     HistoryMessages history = new HistoryMessages(currentUser, newContact);
                     messageHistories.put(newContact, history);
-                    
-                    // Выбираем новый контакт
-                    ListViewDialog.getSelectionModel().select(newContact);
+                    if (!ListViewDialog.getItems().isEmpty()) {
+                        ListViewDialog.getSelectionModel().select(newContact);
+                    }
                     updateDialogView(newContact);
-                    
-                    // Устанавливаем статус соединения
                     newContact.setConnected(true);
                     updateConnectionStatus(true);
-                    
                     showAlert("Connection Established", 
                         "Connection with " + username + " has been established.");
                 });

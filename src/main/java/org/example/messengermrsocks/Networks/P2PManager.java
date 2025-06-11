@@ -42,7 +42,11 @@ public class P2PManager {
                 contact.setIp(fromIp);
                 contact.setMainPort(P2P_PORT);
                 System.out.println("[P2PManager] Создан/обновлен контакт: " + contact.getName() + " (IP: " + contact.getIp() + ")");
-                p2pConnectionManager.addContact(contact);
+                // Проверка на дубликат
+                boolean alreadyExists = p2pConnectionManager.activePorts.keySet().stream().anyMatch(c -> c.getName().equals(contact.getName()));
+                if (!alreadyExists) {
+                    p2pConnectionManager.addContact(contact);
+                }
                 
                 // Получаем порты, которые мы отправили собеседнику в инвайте
                 List<Integer> myPorts = p2pInviteManager.getMyPortsForContact(fromUsername);
@@ -93,7 +97,11 @@ public class P2PManager {
                 contact.setIp(fromIp);
                 contact.setMainPort(P2P_PORT);
                 System.out.println("[P2PManager] Создан/обновлен контакт для реконнекта: " + contact.getName() + " (IP: " + contact.getIp() + ")");
-                p2pConnectionManager.addContact(contact);
+                // Проверка на дубликат
+                boolean alreadyExists = p2pConnectionManager.activePorts.keySet().stream().anyMatch(c -> c.getName().equals(contact.getName()));
+                if (!alreadyExists) {
+                    p2pConnectionManager.addContact(contact);
+                }
                 
                 // Получаем порты, которые мы отправили собеседнику в инвайте
                 List<Integer> myPorts = p2pInviteManager.getMyPortsForContact(fromUsername);
@@ -129,6 +137,16 @@ public class P2PManager {
                     uiListener.onReconnectRequest(fromUsername, fromIp, fromPort);
                 }
             }
+
+            @Override
+            public void onContactDeleted(String fromUsername) {
+                // Удаляем контакт из списка активных контактов
+                p2pConnectionManager.removeContact(new Contact(fromUsername, "", ""));
+                // Уведомляем UI listener о удалении контакта
+                if (uiListener != null) {
+                    uiListener.onContactDeleted(fromUsername);
+                }
+            }
         });
     }
 
@@ -144,8 +162,18 @@ public class P2PManager {
         if (contact == null || contact.getIp() == null) {
             return false;
         }
-        // Always use the fixed P2P port
-        return p2pInviteManager.sendInvite(contact.getName(), contact.getIp(), P2P_PORT);
+        try {
+            // Always use the fixed P2P port
+            boolean success = p2pInviteManager.sendInvite(contact.getName(), contact.getIp(), P2P_PORT);
+            if (!success) {
+                System.err.println("[P2PManager] Не удалось отправить приглашение пользователю " + contact.getName());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            System.err.println("[P2PManager] Ошибка при попытке подключения к " + contact.getName() + ": " + e.getMessage());
+            return false;
+        }
     }
 
     public void shutdown() {
