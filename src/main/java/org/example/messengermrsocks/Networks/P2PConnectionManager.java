@@ -43,6 +43,7 @@ public class P2PConnectionManager {
 
     public void removeContact(Contact contact) {
         activePorts.remove(contact);
+        receiverMap.remove(contact.getName());
     }
 
     public boolean sendMessage(Message message, Contact contact) {
