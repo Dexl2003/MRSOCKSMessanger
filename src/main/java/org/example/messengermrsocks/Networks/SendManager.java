@@ -11,14 +11,28 @@ import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import org.example.messengermrsocks.Networks.P2PInviteManager;
+import org.example.messengermrsocks.Networks.P2PSession;
+import org.example.messengermrsocks.Networks.P2PMessageSender;
+import org.example.messengermrsocks.Networks.P2PFragment;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CompletableFuture;
+import java.io.IOException;
+import java.net.Socket;
+import java.io.ObjectOutputStream;
+import java.util.ArrayList;
+import java.util.Random;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class SendManager implements SendProvider {
-    private final P2PConnectionManager p2pManager;
+    private final P2PInviteManager p2pInviteManager;
     private final SecureRandom secureRandom;
     private static final String ALGORITHM = "AES";
+    private final AtomicInteger messageCounter = new AtomicInteger(0);
 
-    public SendManager() {
-        this.p2pManager = new P2PConnectionManager();
+    public SendManager(P2PInviteManager p2pInviteManager) {
+        this.p2pInviteManager = p2pInviteManager;
         this.secureRandom = new SecureRandom();
     }
 
@@ -87,29 +101,102 @@ public class SendManager implements SendProvider {
 
     @Override
     public Boolean sendMessage(String text, Contact contact) {
+        System.out.println("[SendManager] sendMessage вызван для контакта: " + contact.getName() + ", IP: " + contact.getIp());
         try {
-            // Create message object
+            // Получаем защищённую сессию для контакта
+            P2PSession session = p2pInviteManager.getSessionMap().get(contact.getName());
+            if (session == null) {
+                System.err.println("No secure session for contact: " + contact.getName());
+                return false;
+            }
+            P2PMessageSender sender = new P2PMessageSender(session.getAesKey(), session.getHmacKey());
+
+            // Сериализуем сообщение
             Message message = new Message(text, 
                 java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
                 "/images/image.png", true);
+            byte[] messageBytes = serializeMessage(message);
 
-            // Encrypt message using AES
-            String generalCloseKey = generateGeneralCloseKey(contact.getOpenKey(), generateSelfCloseKey());
-            SecretKey secretKey = new SecretKeySpec(Base64.getDecoder().decode(generalCloseKey), ALGORITHM);
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey);
-            byte[] encryptedText = cipher.doFinal(text.getBytes());
-            message.setText(Base64.getEncoder().encodeToString(encryptedText));
+            // Генерируем уникальный messageId
+            int messageId = messageCounter.incrementAndGet();
 
-            // Send message through P2P
-            return p2pManager.sendMessage(message, contact);
+            // Фрагментируем и шифруем
+            List<P2PFragment> fragments = sender.fragmentAndEncrypt(messageBytes, messageId);
+            System.out.println("[SendManager] Количество фрагментов сообщения: " + fragments.size());
+
+            // Получаем remotePorts для контакта
+            List<Integer> ports = p2pInviteManager.getRemotePorts(contact.getName());
+            System.out.println("[SendManager] Полученные порты для контакта: " + ports);
+            if (ports == null) {
+                System.err.println("[SendManager] Нет remotePorts для контакта, fallback на генерацию портов!");
+                ports = generatePorts(fragments.size());
+                System.out.println("[SendManager] Сгенерированы новые порты: " + ports);
+            } else if (ports.size() < fragments.size()) {
+                System.err.println("[SendManager] Недостаточно портов (портов: " + ports.size() + ", фрагментов: " + fragments.size() + "), fallback на генерацию портов!");
+                ports = generatePorts(fragments.size());
+                System.out.println("[SendManager] Сгенерированы новые порты: " + ports);
+            } else if (ports.size() > fragments.size()) {
+                // Если портов больше чем фрагментов, берем только нужное количество портов
+                System.out.println("[SendManager] Портов больше чем фрагментов, используем первые " + fragments.size() + " портов");
+                ports = ports.subList(0, fragments.size());
+            }
+            message.setListNextPort(ports);
+
+            // Асинхронно отправляем фрагменты
+            CompletableFuture<Boolean> sendFuture = sendFragmentsAsync(fragments, contact.getIp(), ports);
+            return sendFuture.join();
         } catch (Exception e) {
             e.printStackTrace();
             return false;
         }
     }
 
+    private List<Integer> generatePorts(int count) {
+        List<Integer> ports = new ArrayList<>();
+        Random random = new Random();
+        int MIN_PORT = 49152;
+        int MAX_PORT = 65535;
+        for (int i = 0; i < count; i++) {
+            int port;
+            do {
+                port = MIN_PORT + random.nextInt(MAX_PORT - MIN_PORT);
+            } while (ports.contains(port));
+            ports.add(port);
+        }
+        return ports;
+    }
+
+    public CompletableFuture<Boolean> sendFragmentsAsync(List<P2PFragment> fragments, String ip, List<Integer> ports) {
+        List<CompletableFuture<Boolean>> sendFutures = new ArrayList<>();
+        for (int i = 0; i < fragments.size(); i++) {
+            final int fragmentIndex = i;
+            final int port = ports.get(i);
+            CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+                try (Socket socket = new Socket(ip, port);
+                     ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())) {
+                    out.writeObject(fragments.get(fragmentIndex));
+                    System.out.println("[SendManager] Фрагмент " + fragmentIndex + " успешно отправлен на " + ip + ":" + port);
+                    return true;
+                } catch (IOException e) {
+                    System.err.println("[SendManager] Ошибка отправки фрагмента " + fragmentIndex + " на " + ip + ":" + port + ": " + e.getMessage());
+                    return false;
+                }
+            });
+            sendFutures.add(future);
+        }
+        return CompletableFuture.allOf(sendFutures.toArray(new CompletableFuture[0]))
+            .thenApply(v -> sendFutures.stream().allMatch(CompletableFuture::join));
+    }
+
+    private byte[] serializeMessage(Message message) throws Exception {
+        try (java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+             java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(baos)) {
+            oos.writeObject(message);
+            return baos.toByteArray();
+        }
+    }
+
     public void shutdown() {
-        p2pManager.shutdown();
+        // Если нужно, можно добавить логику завершения
     }
 }

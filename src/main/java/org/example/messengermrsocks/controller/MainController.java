@@ -76,95 +76,13 @@ public class MainController {
     public static ListView listViewHistoryChatStatic;
     private MessengerData localData;
     private AuthManager authManager;
-    private P2PManager p2pManager;
     private Map<Contact, String> draftMessages = new HashMap<>();
+    private P2PManager p2pManager;
 
     public void setAuthManager(AuthManager authManager) {
         this.authManager = authManager;
         this.currentUser = authManager.getCurrentUser();
-        this.p2pManager = new P2PManager(currentUser);
-        
-        // Устанавливаем слушателя повторных подключений
-        p2pManager.setReconnectListener((fromUsername, fromIp, fromPort) -> {
-            Platform.runLater(() -> {
-                // Находим контакт по имени пользователя
-                Contact contact = allContacts.stream()
-                    .filter(c -> c.getName().equals(fromUsername))
-                    .findFirst()
-                    .orElse(null);
-                
-                if (contact != null) {
-                    // Обновляем IP и порт контакта
-                    contact.setIp(fromIp);
-                    contact.setMainPort(fromPort);
-                    contact.setConnected(true);
-                    
-                    // Если это текущий выбранный контакт, обновляем статус
-                    if (currentContact != null && currentContact.getName().equals(fromUsername)) {
-                        updateConnectionStatus(true);
-                        showAlert("Connection Restored", 
-                            "Connection with " + fromUsername + " has been restored automatically.");
-                    }
-                } else {
-                    // Если контакт не найден, создаем новый диалог
-                    createNewContactDialog(fromUsername, fromIp, fromPort);
-                }
-            });
-        });
-
-        // Устанавливаем слушателя для новых подключений
-        p2pManager.getP2pInviteManager().setInviteListener(new P2PInviteManager.P2PInviteListener() {
-            @Override
-            public void onInviteAccepted(String fromUsername, String fromIp, int fromPort) {
-                Platform.runLater(() -> {
-                    // Проверяем, существует ли уже контакт
-                    Contact existingContact = allContacts.stream()
-                        .filter(c -> c.getName().equals(fromUsername))
-                        .findFirst()
-                        .orElse(null);
-
-                    if (existingContact == null) {
-                        // Создаем новый диалог для нового контакта
-                        createNewContactDialog(fromUsername, fromIp, fromPort);
-                    } else {
-                        // Обновляем существующий контакт
-                        existingContact.setIp(fromIp);
-                        existingContact.setMainPort(fromPort);
-                        existingContact.setConnected(true);
-                        if (currentContact != null && currentContact.getName().equals(fromUsername)) {
-                            updateConnectionStatus(true);
-                        }
-                    }
-                });
-            }
-
-            @Override
-            public void onInviteRejected(String fromUsername) {
-                Platform.runLater(() -> {
-                    // Находим контакт и обновляем его статус
-                    Contact contact = allContacts.stream()
-                        .filter(c -> c.getName().equals(fromUsername))
-                        .findFirst()
-                        .orElse(null);
-                    
-                    if (contact != null) {
-                        contact.setConnected(false);
-                        if (currentContact != null && currentContact.getName().equals(fromUsername)) {
-                            updateConnectionStatus(false);
-                        }
-                    }
-                    
-                    showAlert("Connection Rejected", 
-                        "Connection request from " + fromUsername + " was rejected.");
-                });
-            }
-
-            @Override
-            public void onReconnectRequest(String fromUsername, String fromIp, int fromPort) {
-                // Обработка повторных подключений уже реализована в ReconnectListener
-            }
-        });
-
+        initializeP2PManager();
         initialize();
     }
 
@@ -474,6 +392,112 @@ public class MainController {
         repeatButton.setOnAction(e -> handleRepeatButton());
     }
 
+    private void initializeP2PManager() {
+        p2pManager = new P2PManager(currentUser);
+        
+        // Устанавливаем слушатель для обновления UI при реконнекте
+        p2pManager.setReconnectListener((fromUsername, fromIp, fromPort) -> {
+            Platform.runLater(() -> {
+                Contact existingContact = allContacts.stream()
+                    .filter(c -> c.getName().equals(fromUsername))
+                    .findFirst()
+                    .orElse(null);
+
+                if (existingContact != null) {
+                    existingContact.setIp(fromIp);
+                    existingContact.setMainPort(fromPort);
+                    existingContact.setConnected(true);
+                    if (currentContact != null && currentContact.getName().equals(fromUsername)) {
+                        updateConnectionStatus(true);
+                    }
+                }
+            });
+        });
+
+        // Устанавливаем слушатель для обновления UI при получении сообщения
+        p2pManager.getP2pConnectionManager().setOnMessageReceived((senderIp, messageBytes) -> {
+            try {
+                // Десериализуем сообщение
+                Message message = deserializeMessage(messageBytes);
+                if (message != null) {
+                    // Находим контакт по IP
+                    Contact sender = allContacts.stream()
+                        .filter(c -> c.getIp().equals(senderIp))
+                        .findFirst()
+                        .orElse(null);
+                    
+                    if (sender != null) {
+                        message.setOwn(false); // Входящее сообщение всегда не наше
+                        Platform.runLater(() -> {
+                            // Добавляем сообщение в историю
+                            HistoryMessages history = messageHistories.get(sender);
+                            if (history != null) {
+                                history.addMessage(message);
+                                // Если это текущий контакт, обновляем UI
+                                if (currentContact != null && currentContact.getName().equals(sender.getName())) {
+                                    updateDialogView(sender);
+                                }
+                                // Сохраняем изменения
+                                saveLocalData();
+                            }
+                        });
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[MainController] Ошибка при обработке входящего сообщения: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+
+        // Устанавливаем слушатель для обновления UI при принятии инвайта
+        p2pManager.setUIListener(new P2PInviteManager.P2PInviteListener() {
+            @Override
+            public void onInviteAccepted(String fromUsername, String fromIp, int fromPort) {
+                Platform.runLater(() -> {
+                    // Проверяем, существует ли уже контакт
+                    Contact existingContact = allContacts.stream()
+                        .filter(c -> c.getName().equals(fromUsername))
+                        .findFirst()
+                        .orElse(null);
+
+                    if (existingContact == null) {
+                        // Создаем новый диалог для нового контакта
+                        createNewContactDialog(fromUsername, fromIp, fromPort);
+                    } else {
+                        // Обновляем существующий контакт
+                        existingContact.setIp(fromIp);
+                        existingContact.setMainPort(fromPort);
+                        existingContact.setConnected(true);
+                        if (currentContact != null && currentContact.getName().equals(fromUsername)) {
+                            updateConnectionStatus(true);
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void onInviteRejected(String fromUsername) {
+                Platform.runLater(() -> {
+                    Contact contact = allContacts.stream()
+                        .filter(c -> c.getName().equals(fromUsername))
+                        .findFirst()
+                        .orElse(null);
+                    if (contact != null) {
+                        contact.setConnected(false);
+                        if (currentContact != null && currentContact.getName().equals(fromUsername)) {
+                            updateConnectionStatus(false);
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void onReconnectRequest(String fromUsername, String fromIp, int fromPort) {
+                // Обработка реконнекта уже реализована в ReconnectListener
+            }
+        });
+    }
+
     private void updateConnectionStatus(boolean isConnected) {
         if (currentContact != null) {
             currentContact.setConnected(isConnected);
@@ -570,29 +594,20 @@ public class MainController {
     private void sendMessage() {
         String text = sendTextField.getText();
         if (text != null && !text.isEmpty() && currentHistory != null && !disconnectedContacts.contains(currentContact)) {
-            // Add new message
+            // Add new message to local history
             String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
             Message message = new Message(text, time, "/images/image.png", true);
             currentHistory.addMessage(message);
-            // Автоскролл к последнему сообщению
             javafx.application.Platform.runLater(() -> listViewHistoryChat.scrollTo(listViewHistoryChat.getItems().size() - 1));
-            saveLocalData(); // Автоматическое сохранение
-            // Simulate sending message and receiving status
-            new Thread(() -> {
-                try {
-                    // Simulate network delay
-                    Thread.sleep(1000);
-                    // Update message status
-                    message.setSent(true);
-                    Platform.runLater(() -> listViewHistoryChat.refresh());
-                    // Simulate receiving confirmation
-                    Thread.sleep(1000);
-                    message.setReceived(true);
-                    Platform.runLater(() -> listViewHistoryChat.refresh());
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }).start();
+            saveLocalData();
+
+            // --- Реальная отправка через SendManager ---
+            if (p2pManager != null && currentContact != null) {
+                System.out.println("[MainController] Отправка сообщения через SendManager...");
+                boolean sent = p2pManager.getP2pConnectionManager().getSendManager().sendMessage(text, currentContact);
+                System.out.println("[MainController] sendMessage вернул: " + sent);
+            }
+
             sendTextField.clear();
         }
     }
@@ -829,5 +844,16 @@ public class MainController {
                 filteredContacts.remove(newContact);
             }
         });
+    }
+
+    private Message deserializeMessage(byte[] data) {
+        try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(data);
+             java.io.ObjectInputStream ois = new java.io.ObjectInputStream(bais)) {
+            return (Message) ois.readObject();
+        } catch (Exception e) {
+            System.err.println("[MainController] Ошибка при десериализации сообщения: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
     }
 }
